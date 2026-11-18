@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::{Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -12,6 +13,7 @@ use jiff::ZonedDateTime;
 use ostracon_core::TaskId;
 use ostracon_core::tree::TaskRow;
 
+use super::actions::{Complete, Delete, Edit, NewSubtask, OpenOverview};
 use super::theme::{self, CHECKBOX, INDENT, META_TEXT, Palette, TASK_TEXT};
 use super::workspace::{DraggedTasks, Workspace};
 use crate::format;
@@ -359,6 +361,17 @@ impl Workspace {
             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                 this.click_row(id, event, window, cx)
             }))
+            // A right click acts on the selection if it lands inside it, otherwise selects just this row, as in
+            // Finder. It runs before the context menu is built.
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, _, window, cx| {
+                    this.pending_open = None;
+                    if !this.state.selection.contains(id) {
+                        this.act(window, cx, |s| s.select_only(id));
+                    }
+                }),
+            )
             .child(
                 div()
                     .relative()
@@ -413,7 +426,68 @@ impl Workspace {
                     ),
             );
 
-        row.test_support().into_any_element()
+        // The menu lives on a wrapper so the row itself can be registered for UI tests.
+        div()
+            .id(("task-menu", id.0 as usize))
+            .child(row.test_support())
+            .context_menu(self.task_menu(completed, cx.entity().downgrade()))
+            .into_any_element()
+    }
+
+    /// The task context menu. Its items are the list's own actions, sent to the list, so they act on the
+    /// selection (which the right click has just set) and show their shortcuts.
+    fn task_menu(
+        &self,
+        completed: bool,
+        workspace: WeakEntity<Workspace>,
+    ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
+        let list_focus = self.list_focus.clone();
+        move |menu, window, cx| {
+            let Some(workspace) = workspace.upgrade() else {
+                return menu;
+            };
+            let (count, projects) = workspace.read_with(cx, |w, _| {
+                (w.state.acting_on(None).len(), w.state.projects().to_vec())
+            });
+            let many = count > 1;
+            let move_target = workspace.downgrade();
+            menu.action_context(list_focus.clone())
+                .menu_with_disabled("Open", Box::new(OpenOverview), many)
+                .menu_with_disabled("Edit", Box::new(Edit), many)
+                .menu_with_disabled("Add sub-task", Box::new(NewSubtask), many)
+                .separator()
+                .menu(
+                    if completed { "Reopen" } else { "Complete" },
+                    Box::new(Complete),
+                )
+                .submenu("Move to", window, cx, move |mut menu, _, _| {
+                    for project in &projects {
+                        let (pid, target) = (project.id, move_target.clone());
+                        menu = menu.item(PopupMenuItem::new(project.name.clone()).on_click(
+                            move |_, window, cx| {
+                                if let Some(target) = target.upgrade() {
+                                    target.update(cx, |this, cx| {
+                                        this.act(window, cx, |s| {
+                                            let ids = s.acting_on(None);
+                                            s.move_to_project(&ids, pid);
+                                        })
+                                    });
+                                }
+                            },
+                        ));
+                    }
+                    menu
+                })
+                .separator()
+                .menu(
+                    if many {
+                        format!("Delete {count} tasks…")
+                    } else {
+                        "Delete…".to_owned()
+                    },
+                    Box::new(Delete),
+                )
+        }
     }
 
     /// ⌘-click toggles, ⇧-click extends, a double click edits in place, and a single click selects and then

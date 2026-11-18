@@ -212,3 +212,39 @@ fn dragging_a_task_onto_a_project_moves_it(cx: &mut TestAppContext) {
     let project = workspace.read_with(cx, |w, _| w.state.task(task).unwrap().project_id);
     assert_eq!(project, garden);
 }
+
+#[gpui_kit::test]
+fn right_click_menu_selects_the_row_and_deletes_it(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let (workspace, cx) = open(cx, |repo| {
+        for name in ["A", "B"] {
+            repo.add_task(NewTask {
+                name: name.into(),
+                ..Default::default()
+            })
+            .unwrap();
+        }
+    });
+    let (a, b) = workspace.read_with(cx, |w, _| (w.state.rows()[0].id(), w.state.rows()[1].id()));
+    cx.simulate_keystrokes("j");
+    cx.run_until_parked();
+    assert!(workspace.read_with(cx, |w, _| w.state.selection.contains(a)));
+
+    cx.update(|window, cx| window.right_click(("task", b.0 as usize), cx));
+    cx.run_until_parked();
+    assert_eq!(
+        workspace.read_with(cx, |w, _| w.state.acting_on(None)),
+        [b],
+        "a right click outside the selection selects that row"
+    );
+    // Open, Edit, Add sub-task, —, Complete, Move to, —, Delete…
+    cx.update(|window, cx| window.within("popup-menu").click(7usize, cx));
+    cx.run_until_parked();
+    assert_eq!(
+        workspace.read_with(cx, |w, _| w.state.dialog.clone()),
+        Dialog::ConfirmDeleteTasks(vec![b])
+    );
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["A"]);
+}
