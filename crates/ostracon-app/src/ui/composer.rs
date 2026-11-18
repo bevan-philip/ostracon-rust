@@ -1,10 +1,11 @@
-//! The inline composer for adding and editing tasks: the quick-add name field, a description, and chips for
-//! the date, reminders and project.
+//! The inline composer for adding and editing tasks: the quick-add name field, a description, and one row of
+//! chips for the date, reminders and project, with cancel and save beside them, as in Todoist.
 
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_kit::component::{Disableable as _, IconName, Sizable as _};
+use gpui_kit::component::{Disableable as _, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use jiff::ZonedDateTime;
@@ -239,18 +240,29 @@ impl ComposerView {
     }
 }
 
+const CHIP_HEIGHT: f32 = 28.;
+
+/// A chip's content: an icon and a label, the same whether the chip is a plain element or a button.
+fn chip_content(icon: Icon, label: impl Into<SharedString>) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap_1p5()
+        .child(icon.size(px(14.)))
+        .child(label.into())
+}
+
 fn chip(id: impl Into<ElementId>, palette: &theme::Palette) -> Stateful<Div> {
     div()
         .id(id)
         .flex()
         .items_center()
-        .gap_1()
-        .h(px(26.))
+        .h(px(CHIP_HEIGHT))
         .px_2()
         .rounded_md()
         .border_1()
         .border_color(palette.card_border)
-        .text_size(px(12.5))
+        .text_size(px(13.))
         .text_color(palette.muted)
         .cursor_pointer()
         .hover(|d| d.bg(palette.sidebar_hover))
@@ -275,35 +287,49 @@ impl Render for ComposerView {
                 ),
                 None => ("Date".to_owned(), palette.muted),
             };
-            let written = self.parsed.due.is_some();
-            div().relative().child(
-                chip("date-chip", &palette)
-                    .text_color(color)
-                    .when(written, |d| d.bg(palette.block_due))
-                    .child(gpui_kit::component::Icon::new(IconName::Calendar).xsmall())
-                    .child(label)
-                    .on_click(cx.listener(|this, _, window, cx| this.open_date_picker(window, cx))),
-            )
+            chip("date-chip", &palette)
+                .text_color(color)
+                .when(self.parsed.due.is_some(), |d| d.bg(palette.block_due))
+                .child(chip_content(Icon::new(Lucide::Calendar), label))
+                .on_click(cx.listener(|this, _, window, cx| this.open_date_picker(window, cx)))
         };
         let reminder_chip = chip("reminder-chip", &palette)
-            .child(gpui_kit::component::Icon::new(IconName::Bell).xsmall())
-            .child(if reminder_count == 0 {
-                "Reminders".to_owned()
-            } else {
-                format!("{reminder_count}")
-            })
+            .child(chip_content(
+                Icon::new(Lucide::AlarmClock),
+                match reminder_count {
+                    0 => "Reminders".to_owned(),
+                    1 => "1 reminder".to_owned(),
+                    n => format!("{n} reminders"),
+                },
+            ))
             .on_click(cx.listener(|this, _, window, cx| this.open_reminders(window, cx)));
 
         let entity = cx.entity();
         let projects = self.projects.clone();
-        let project_button = Button::new("project-chip")
+        let project_icon = match &project {
+            Some(p) if !p.is_inbox => {
+                Icon::new(Lucide::Hash).text_color(theme::project_color(p.color))
+            }
+            _ => Icon::new(Lucide::Inbox),
+        };
+        let project_chip = Button::new("project-chip")
             .ghost()
             .small()
-            .label(
+            .h(px(CHIP_HEIGHT))
+            .px_2()
+            .border_1()
+            .border_color(palette.card_border)
+            .text_size(px(13.))
+            .text_color(palette.muted)
+            .when(self.parsed.project_id.is_some(), |b| {
+                b.bg(palette.block_project)
+            })
+            .child(chip_content(
+                project_icon,
                 project
                     .as_ref()
                     .map_or("Inbox".to_owned(), |p| p.name.clone()),
-            )
+            ))
             .dropdown_menu(move |mut menu, _, _| {
                 for project in &projects {
                     let id = project.id;
@@ -316,6 +342,20 @@ impl Render for ComposerView {
                 }
                 menu
             });
+
+        let cancel = Button::new("cancel")
+            .ghost()
+            .icon(Icon::new(Lucide::X))
+            .size(px(CHIP_HEIGHT + 4.))
+            .tooltip("Cancel")
+            .on_click(cx.listener(|_, _, _, cx| cx.emit(ComposerEvent::Cancel)));
+        let save = Button::new("save")
+            .primary()
+            .icon(Icon::new(Lucide::Check))
+            .size(px(CHIP_HEIGHT + 4.))
+            .tooltip(if editing { "Save" } else { "Add task" })
+            .disabled(!can_save)
+            .on_click(cx.listener(|_, _, _, cx| cx.emit(ComposerEvent::Submit)));
 
         let picker: Option<AnyElement> = match &self.picker {
             Picker::Closed => None,
@@ -330,94 +370,79 @@ impl Render for ComposerView {
             .flex()
             .flex_col()
             .w_full()
+            .p_3()
             .rounded_lg()
             .border_1()
             .border_color(palette.card_border)
             .bg(palette.card)
+            .child(self.name.clone())
+            // Popovers are absolutely positioned, so each hangs from a zero-height box in the flow below what it
+            // belongs to; otherwise they'd land at the top of the card.
+            .when_some(suggestions, |d, s| {
+                d.child(
+                    div()
+                        .h_0()
+                        .child(deferred(anchored().child(s)).with_priority(2)),
+                )
+            })
+            // No padding of its own, so the description starts where the name does.
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .px_3()
-                    .pt_2()
-                    .child(self.name.clone())
-                    .when_some(suggestions, |d, s| {
-                        d.child(deferred(anchored().child(s)).with_priority(2))
-                    })
-                    .child(
-                        div()
-                            .text_size(px(13.))
-                            .child(Input::new(&self.description).appearance(false).small()),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .py_2()
-                            .child(date_chip)
-                            .child(reminder_chip),
-                    )
-                    .when_some(picker, |d, picker| {
-                        d.child(
-                            deferred(
-                                anchored().snap_to_window().child(
-                                    div()
-                                        .occlude()
-                                        .p_2()
-                                        .rounded_lg()
-                                        .border_1()
-                                        .border_color(palette.card_border)
-                                        .bg(palette.card)
-                                        .shadow_lg()
-                                        .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                                            this.picker = Picker::Closed;
-                                            cx.notify();
-                                        }))
-                                        .child(picker),
-                                ),
-                            )
-                            .with_priority(1),
-                        )
-                    }),
+                Input::new(&self.description)
+                    .appearance(false)
+                    .small()
+                    .px_0()
+                    .text_size(px(13.)),
             )
             .child(
                 div()
                     .flex()
                     .items_center()
                     .justify_between()
-                    .px_2()
-                    .py_1p5()
-                    .border_t_1()
-                    .border_color(palette.hairline)
+                    .gap_2()
+                    .mt_2()
                     .child(
                         div()
                             .flex()
+                            .flex_wrap()
                             .items_center()
-                            .gap_1()
-                            .child(div().size(px(9.)).rounded_full().bg(
-                                project.map_or(palette.accent, |p| theme::project_color(p.color)),
-                            ))
-                            .child(project_button),
+                            .gap_1p5()
+                            .child(date_chip)
+                            .child(reminder_chip)
+                            .child(project_chip),
                     )
                     .child(
                         div()
                             .flex()
+                            .flex_none()
+                            .items_center()
                             .gap_2()
-                            .child(Button::new("cancel").small().label("Cancel").on_click(
-                                cx.listener(|_, _, _, cx| cx.emit(ComposerEvent::Cancel)),
-                            ))
-                            .child(
-                                Button::new("save")
-                                    .small()
-                                    .primary()
-                                    .label(if editing { "Save" } else { "Add task" })
-                                    .disabled(!can_save)
-                                    .on_click(
-                                        cx.listener(|_, _, _, cx| cx.emit(ComposerEvent::Submit)),
-                                    ),
-                            ),
+                            .child(cancel)
+                            .child(save),
                     ),
             )
+            .when_some(picker, |d, picker| {
+                d.child(
+                    div().h_0().child(
+                        deferred(
+                            anchored().snap_to_window().child(
+                                div()
+                                    .occlude()
+                                    .p_2()
+                                    .rounded_lg()
+                                    .border_1()
+                                    .border_color(palette.card_border)
+                                    .bg(palette.card)
+                                    .shadow_lg()
+                                    .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                                        this.picker = Picker::Closed;
+                                        cx.notify();
+                                    }))
+                                    .child(picker),
+                            ),
+                        )
+                        .with_priority(1),
+                    ),
+                )
+            })
     }
 }
