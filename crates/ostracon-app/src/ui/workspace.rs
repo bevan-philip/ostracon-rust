@@ -78,8 +78,6 @@ pub struct Workspace {
     pub project_color: ProjectColor,
     pub panel: Panel,
     pub list_scroll: ScrollHandle,
-    /// A single click opens the overview shortly after, unless a double click (edit) arrives first.
-    pub pending_open: Option<Task<()>>,
     pub toast_timer: Option<(u64, Task<()>)>,
     pub sidebar_scroll: ScrollHandle,
     _tasks: Vec<Task<()>>,
@@ -106,7 +104,6 @@ impl Workspace {
             project_color: ProjectColor::Charcoal,
             panel: Panel::None,
             list_scroll: ScrollHandle::new(),
-            pending_open: None,
             toast_timer: None,
             sidebar_scroll: ScrollHandle::new(),
             _tasks: Vec::new(),

@@ -1,8 +1,6 @@
 //! The task list: a flat, Todoist-style outline with hairline dividers that start at the checkbox, disclosure
 //! chevrons hanging in the left margin, and the composer inline where it belongs.
 
-use std::time::Duration;
-
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
@@ -362,7 +360,6 @@ impl Workspace {
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, _, window, cx| {
-                    this.pending_open = None;
                     if !this.state.selection.contains(id) {
                         this.act(window, cx, |s| s.select_only(id));
                     }
@@ -486,8 +483,7 @@ impl Workspace {
         }
     }
 
-    /// ⌘-click toggles, ⇧-click extends, a double click edits in place, and a single click selects and then
-    /// opens the overview (unless it turns out to be a double click).
+    /// ⌘-click toggles, ⇧-click extends, and a plain click opens the overview, as in Todoist.
     fn click_row(
         &mut self,
         id: TaskId,
@@ -497,35 +493,17 @@ impl Workspace {
     ) {
         let modifiers = event.modifiers();
         if modifiers.platform {
-            self.pending_open = None;
             self.act(window, cx, |s| s.toggle_selection(id));
-            return;
-        }
-        if modifiers.shift {
-            self.pending_open = None;
+        } else if modifiers.shift {
             self.act(window, cx, |s| s.extend_selection_to(id));
-            return;
-        }
-        if event.click_count() >= 2 {
-            self.pending_open = None;
+        } else {
             self.act(window, cx, |s| {
-                s.close_overview();
-                s.start_editing(Some(id));
-            });
-            return;
-        }
-        self.act(window, cx, |s| s.select_only(id));
-        self.pending_open = Some(cx.spawn_in(window, async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(280))
-                .await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.pending_open = None;
-                if this.state.composer == Composer::Closed {
-                    this.act(window, cx, |s| s.open_overview(id));
+                s.select_only(id);
+                if s.composer == Composer::Closed {
+                    s.open_overview(id);
                 }
             });
-        }));
+        }
     }
 }
 
