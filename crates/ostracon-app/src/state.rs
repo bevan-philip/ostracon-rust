@@ -8,7 +8,7 @@
 //!   selections and editors pointing at tasks that are gone or hidden, overviews and dialogs whose target was
 //!   deleted.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use jiff::{Timestamp, ZonedDateTime};
@@ -151,6 +151,14 @@ impl BackupState {
     }
 }
 
+/// A task moved to another project from the overview, and where it was in the list before.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Kept {
+    task: TaskId,
+    parent: Option<TaskId>,
+    position: i64,
+}
+
 pub struct AppState {
     repo: Repository,
     snapshot: Snapshot,
@@ -163,6 +171,10 @@ pub struct AppState {
     pub composer: Composer,
     /// The task whose overview is open.
     pub overview: Option<TaskId>,
+    /// Tasks moved to another project from the overview, as in Todoist. They and their subtasks keep their
+    /// place in the list until the overview closes, so the list doesn't shift under it and stepping away and
+    /// back finds them where they were.
+    kept: Vec<Kept>,
     pub dialog: Dialog,
     pub toast: Option<Toast>,
     /// The last thing that went wrong, for the error banner.
@@ -204,6 +216,7 @@ impl AppState {
             selection: Selection::Empty,
             composer: Composer::Closed,
             overview: None,
+            kept: Vec::new(),
             dialog: Dialog::None,
             toast: None,
             error: None,
@@ -455,7 +468,7 @@ impl AppState {
     // Composer
 
     pub fn start_adding(&mut self) {
-        self.overview = None;
+        self.close_overview();
         self.composer = Composer::Adding { parent: None };
     }
 
@@ -471,7 +484,11 @@ impl AppState {
         {
             return;
         }
-        self.overview = None;
+        // A task kept in the list for the overview leaves it as the overview closes.
+        self.close_overview();
+        if !self.is_in_list(parent) {
+            return;
+        }
         self.composer = Composer::Adding {
             parent: Some(parent),
         };
@@ -484,8 +501,11 @@ impl AppState {
         else {
             return;
         };
+        self.close_overview();
+        if !self.is_in_list(id) {
+            return;
+        }
         self.selection = Selection::single(id);
-        self.overview = None;
         self.composer = Composer::Editing { task: id };
     }
 
@@ -592,8 +612,24 @@ impl AppState {
         self.overview = Some(id);
     }
 
+    /// Closes the overview. Tasks it kept in the list leave it now, handing on the selection as a move would.
     pub fn close_overview(&mut self) {
         self.overview = None;
+        if self.kept.is_empty() {
+            return;
+        }
+        let gone: Vec<TaskId> = self
+            .kept
+            .iter()
+            .map(|k| k.task)
+            .filter(|&id| self.task(id).is_some_and(|t| t.project_id != self.project))
+            .collect();
+        let fallback = self.selection_after_removing(&gone);
+        self.kept.clear();
+        if let Some(fallback) = fallback {
+            self.selection = fallback.map_or(Selection::Empty, Selection::single);
+        }
+        self.reconcile();
     }
 
     /// The task `offset` rows from the open one, which the overview's arrows step to.
@@ -623,8 +659,9 @@ impl AppState {
         self.perform(|repo| repo.set_reminders(id, reminders));
     }
 
+    /// Moves the overview's task. It keeps its place in the list until the overview closes.
     pub fn move_task_to(&mut self, id: TaskId, project: ProjectId) {
-        self.move_to_project(&[id], project);
+        self.move_tasks(&[id], project, self.overview.is_some());
     }
 
     pub fn add_subtask(&mut self, parent: TaskId, name: &str) -> bool {
@@ -793,6 +830,11 @@ impl AppState {
     /// Moves tasks, with their subtasks, to the end of another project, keeping their order. Returns `false`
     /// if they were all already there.
     pub fn move_to_project(&mut self, ids: &[TaskId], project: ProjectId) -> bool {
+        self.move_tasks(ids, project, false)
+    }
+
+    /// [`AppState::move_to_project`], optionally keeping the tasks in the list for the open overview.
+    fn move_tasks(&mut self, ids: &[TaskId], project: ProjectId, keep: bool) -> bool {
         let ids: Vec<TaskId> = self
             .topmost(ids)
             .into_iter()
@@ -804,13 +846,32 @@ impl AppState {
         if ids.is_empty() {
             return false;
         }
-        let fallback = (project != self.project)
+        let fallback = (!keep && project != self.project)
             .then(|| self.selection_after_removing(&ids))
             .flatten();
+        // Recorded before the write, as the reload after it would otherwise close the overview; a failed write
+        // leaves the tasks where these say they are, and they are dropped again.
+        let kept_before = self.kept.len();
+        if keep {
+            let new: Vec<Kept> = ids
+                .iter()
+                .filter(|&&id| !self.kept.iter().any(|k| k.task == id))
+                .filter_map(|&id| self.task(id))
+                .filter(|t| self.listed_project(t) == self.project)
+                .map(|t| Kept {
+                    task: t.id,
+                    parent: t.parent_id,
+                    position: t.position,
+                })
+                .collect();
+            self.kept.extend(new);
+        }
         if !self.perform(|repo| {
             ids.iter()
                 .try_for_each(|&id| repo.move_to_project(id, project))
         }) {
+            self.kept.truncate(kept_before);
+            self.refresh_rows();
             return false;
         }
         if let Some(fallback) = fallback {
@@ -1188,11 +1249,12 @@ impl AppState {
             _ => {}
         }
 
-        if self
-            .overview
-            .is_some_and(|id| self.task(id).is_none_or(|t| t.project_id != self.project))
-        {
-            self.overview = None;
+        self.kept.retain(|k| self.snapshot.task(k.task).is_some());
+        if self.overview.is_some_and(|id| {
+            self.task(id)
+                .is_none_or(|t| self.listed_project(t) != self.project)
+        }) {
+            self.close_overview();
         }
 
         let dialog_is_stale = match &self.dialog {
@@ -1221,7 +1283,61 @@ impl AppState {
     }
 
     fn refresh_rows(&mut self) {
-        self.rows = tree::rows(&self.snapshot.tasks, self.project, self.show_completed);
+        if self.overview.is_none() {
+            self.kept.clear();
+        }
+        self.rows = if self.kept.is_empty() {
+            tree::rows(&self.snapshot.tasks, self.project, self.show_completed)
+        } else {
+            let parents: HashMap<TaskId, Option<TaskId>> = self
+                .snapshot
+                .tasks
+                .iter()
+                .map(|t| (t.id, t.parent_id))
+                .collect();
+            let is_kept = |id: TaskId| self.kept.iter().any(|k| k.task == id);
+            let in_kept_subtree = |mut id: TaskId| {
+                // Bounded, in case a corrupt database has a cycle.
+                for _ in 0..=parents.len() {
+                    if is_kept(id) {
+                        return true;
+                    }
+                    match parents.get(&id).copied().flatten() {
+                        Some(parent) => id = parent,
+                        None => return false,
+                    }
+                }
+                false
+            };
+            let tasks: Vec<Task> = self
+                .snapshot
+                .tasks
+                .iter()
+                .map(|task| {
+                    let mut task = task.clone();
+                    if let Some(kept) = self.kept.iter().find(|k| k.task == task.id) {
+                        task.parent_id = kept.parent;
+                        task.position = kept.position;
+                    }
+                    if in_kept_subtree(task.id) {
+                        task.project_id = self.project;
+                    }
+                    task
+                })
+                .collect();
+            tree::rows(&tasks, self.project, self.show_completed)
+        };
+    }
+
+    /// The project whose list shows `task`: the current one for a task the overview keeps, or a subtask of
+    /// one, and otherwise its own.
+    fn listed_project(&self, task: &Task) -> ProjectId {
+        let kept = |id: TaskId| self.kept.iter().any(|k| k.task == id);
+        if kept(task.id) || self.ancestors(task.id).into_iter().any(kept) {
+            self.project
+        } else {
+            task.project_id
+        }
     }
 
     /// Runs `change` as one transaction, then reloads. On failure shows why, and none of it was kept. Update

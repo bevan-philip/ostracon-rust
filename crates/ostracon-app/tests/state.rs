@@ -330,6 +330,52 @@ fn moving_a_selection_to_another_project() {
 }
 
 #[test]
+fn moving_from_the_overview_keeps_the_task_in_the_list_until_it_closes() {
+    let mut state = state();
+    let work = state
+        .repository()
+        .create_project("Work", ProjectColor::Red)
+        .unwrap();
+    let home = state
+        .repository()
+        .create_project("Home", ProjectColor::Blue)
+        .unwrap();
+    state.reload();
+    let ids = add_outline(&mut state, "A\nB\n B1\n  B2\nC");
+    state.open_overview(ids[1]);
+    state.move_task_to(ids[1], work.id);
+    assert_eq!(state.overview, Some(ids[1]), "the overview stays open");
+    assert_eq!(state.task(ids[1]).unwrap().project_id, work.id);
+    assert_eq!(state.task(ids[2]).unwrap().project_id, work.id);
+    assert_eq!(shown(&state), ["A", "B", " B1", "  B2", "C"]);
+    assert_eq!(state.selection.anchor(), Some(ids[1]));
+    assert_eq!(state.toast.as_ref().unwrap().message, "Task moved to Work");
+
+    // Stepping away and back finds it where it was.
+    state.open_overview(state.overview_neighbour(1).unwrap());
+    assert_eq!(state.overview, Some(ids[2]));
+    state.open_overview(state.overview_neighbour(-1).unwrap());
+    assert_eq!(state.overview, Some(ids[1]));
+
+    // So does a subtask moved on its own, at its old depth.
+    state.open_overview(ids[3]);
+    state.move_task_to(ids[3], home.id);
+    assert_eq!(state.task(ids[3]).unwrap().parent_id, None);
+    assert_eq!(shown(&state), ["A", "B", " B1", "  B2", "C"]);
+
+    state.open_overview(ids[1]);
+    state.close_overview();
+    assert_eq!(shown(&state), ["A", "C"]);
+    assert_eq!(
+        state.selection.anchor(),
+        Some(ids[4]),
+        "the selection moves on as it would after any move"
+    );
+    state.select_project(work.id);
+    assert_eq!(shown(&state), ["B", " B1"]);
+}
+
+#[test]
 fn rescheduling_a_selection_keeps_times() {
     let mut state = state();
     let ids = add_outline(&mut state, "A\nB");
