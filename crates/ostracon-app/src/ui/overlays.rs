@@ -123,10 +123,10 @@ impl Workspace {
             names
         };
         let subtasks: Vec<_> = self.state.subtasks(task.id).into_iter().cloned().collect();
-        let picker: Option<AnyElement> = match &overview.picker {
-            OverviewPicker::Closed => None,
-            OverviewPicker::Date(p) => Some(p.clone().into_any_element()),
-            OverviewPicker::Reminders(e) => Some(e.clone().into_any_element()),
+        let (date_picker, reminder_editor) = match &overview.picker {
+            OverviewPicker::Closed => (None, None),
+            OverviewPicker::Date(p) => (Some(p.clone().into_any_element()), None),
+            OverviewPicker::Reminders(e) => (None, Some(e.clone().into_any_element())),
         };
         let id = task.id;
         let completed = task.is_completed();
@@ -313,7 +313,7 @@ impl Workspace {
             )
             .child(div().h(px(1.)).bg(palette.hairline).my_2())
             .child(side_label("Date"))
-            .child(
+            .child(side_control(
                 Button::new("overview-date")
                     .ghost()
                     .small()
@@ -327,7 +327,9 @@ impl Workspace {
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.open_overview_picker(true, window, cx)
                     })),
-            )
+                date_picker,
+                palette,
+            ))
             .child(div().h(px(1.)).bg(palette.hairline).my_2())
             .child(side_label("Reminders"))
             .children(
@@ -335,7 +337,7 @@ impl Workspace {
                     .into_iter()
                     .map(|r| div().px_2().text_size(px(13.)).child(r)),
             )
-            .child(
+            .child(side_control(
                 Button::new("overview-reminders")
                     .ghost()
                     .small()
@@ -348,26 +350,9 @@ impl Workspace {
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.open_overview_picker(false, window, cx)
                     })),
-            )
-            .when_some(picker, |d, picker| {
-                d.child(
-                    deferred(
-                        anchored().snap_to_window().child(
-                            div()
-                                .occlude()
-                                .p_2()
-                                .rounded_lg()
-                                .border_1()
-                                .border_color(palette.card_border)
-                                .bg(palette.card)
-                                .shadow_lg()
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .child(picker),
-                        ),
-                    )
-                    .with_priority(3),
-                )
-            });
+                reminder_editor,
+                palette,
+            ));
 
         let can_step_back = self.state.overview_neighbour(-1).is_some();
         let can_step_on = self.state.overview_neighbour(1).is_some();
@@ -849,4 +834,37 @@ impl Render for Workspace {
             .children(modal)
             .children(toast)
     }
+}
+
+/// A button in the overview's side panel, at its natural width on the left, with its picker (if open) hanging
+/// just below it.
+fn side_control(button: Button, picker: Option<AnyElement>, palette: &Palette) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .items_start()
+        .child(button)
+        .when_some(picker, |d, picker| {
+            // A zero-height box in the flow marks the spot under the button for the popover to anchor to.
+            d.child(
+                div().h_0().child(
+                    deferred(
+                        anchored().snap_to_window_with_margin(px(8.)).child(
+                            div()
+                                .occlude()
+                                .mt_1()
+                                .p_2()
+                                .rounded_lg()
+                                .border_1()
+                                .border_color(palette.card_border)
+                                .bg(palette.card)
+                                .shadow_lg()
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                .child(picker),
+                        ),
+                    )
+                    .with_priority(3),
+                ),
+            )
+        })
 }
