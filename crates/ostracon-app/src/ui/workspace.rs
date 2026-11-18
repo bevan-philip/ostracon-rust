@@ -291,7 +291,7 @@ impl Workspace {
         let name = cx.new(|cx| InputState::new(window, cx).default_value(task.name.clone()));
         let description = cx.new(|cx| {
             TextareaState::new(window, cx)
-                .auto_grow(2, 12)
+                .auto_grow(1, 12)
                 .placeholder("Description")
                 .default_value(task.description.clone())
         });

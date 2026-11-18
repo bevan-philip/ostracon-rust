@@ -17,6 +17,13 @@ use super::workspace::{OverviewPicker, Panel, Workspace};
 use crate::format;
 use crate::state::{Dialog, Undo};
 
+/// The backdrop's padding above a modal card.
+const MODAL_TOP: f32 = 72.;
+/// Between the overview's checkbox and its name.
+const OVERVIEW_CHECK_GAP: f32 = 6.;
+/// The overview's name input's own left padding, so its text lines up with what's below.
+const OVERVIEW_INPUT_PAD: f32 = 8.;
+
 impl Workspace {
     /// The modal layer, if anything is open, topmost first.
     pub fn render_modal(
@@ -65,7 +72,7 @@ impl Workspace {
                 .flex()
                 .justify_center()
                 .items_start()
-                .pt(px(72.))
+                .pt(px(MODAL_TOP))
                 .bg(palette.backdrop)
                 .key_context(format!("Modal {context}").as_str())
                 .track_focus(&self.modal_focus)
@@ -100,7 +107,7 @@ impl Workspace {
     fn render_overview(
         &mut self,
         palette: &Palette,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let overview = self.overview.as_ref()?;
@@ -133,28 +140,6 @@ impl Workspace {
 
         let entity = cx.entity();
         let projects = self.state.projects().to_vec();
-        let project_menu = Button::new("overview-project")
-            .ghost()
-            .small()
-            .label(
-                project
-                    .as_ref()
-                    .map_or("Inbox".to_owned(), |p| p.name.clone()),
-            )
-            .dropdown_menu(move |mut menu, _, _| {
-                for p in &projects {
-                    let (pid, entity) = (p.id, entity.clone());
-                    menu = menu.item(PopupMenuItem::new(p.name.clone()).on_click(
-                        move |_, window, cx| {
-                            entity.update(cx, |this, cx| {
-                                this.act(window, cx, |s| s.move_task_to(id, pid))
-                            });
-                        },
-                    ));
-                }
-                menu
-            });
-
         let due_label = task.due.map(|d| {
             (
                 format::due_label(d, &now),
@@ -167,23 +152,32 @@ impl Workspace {
             .map(|r| format::reminder_label(*r, &now))
             .collect();
 
+        // Todoist's measurements: the name's text, the description icon, the sub-tasks and the divider all
+        // start at the same inset.
+        let text_inset = px(theme::CHECKBOX + OVERVIEW_CHECK_GAP + OVERVIEW_INPUT_PAD);
+        let open_subtasks = subtasks.iter().filter(|t| !t.is_completed()).count();
         let main = div()
+            .id("overview-main")
             .flex()
             .flex_col()
             .flex_1()
             .min_w_0()
-            .gap_2()
-            .p_5()
+            .overflow_y_scroll()
+            .gap_1()
+            .pl(px(18.))
+            .pr_4()
+            .pt_4()
+            .pb_4()
             .child(
                 div()
                     .flex()
-                    .gap_3()
+                    .gap(px(OVERVIEW_CHECK_GAP))
                     .items_start()
                     .child(
                         div()
                             .id("overview-check")
-                            .mt(px(8.))
-                            .size(px(20.))
+                            .mt(px(5.))
+                            .size(px(theme::CHECKBOX))
                             .flex_none()
                             .rounded_full()
                             .border(px(1.5))
@@ -195,44 +189,55 @@ impl Workspace {
                             })),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_size(px(18.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(Input::new(&overview.name).appearance(false)),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(13.5))
-                                    .child(Textarea::new(&overview.description).appearance(false)),
-                            ),
+                        div().flex_1().min_w_0().child(
+                            Input::new(&overview.name)
+                                .appearance(false)
+                                .text_size(px(20.))
+                                .font_weight(FontWeight::BOLD)
+                                .line_height(px(28.))
+                                .h(px(28.))
+                                .px(px(OVERVIEW_INPUT_PAD)),
+                        ),
                     ),
             )
-            .child(div().h(px(1.)).bg(palette.hairline).my_2())
             .child(
                 div()
-                    .text_size(px(13.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(palette.muted)
-                    .child(if subtasks.is_empty() {
-                        "Sub-tasks".to_owned()
-                    } else {
-                        format!(
-                            "Sub-tasks {}/{}",
-                            subtasks.iter().filter(|t| t.is_completed()).count(),
-                            self.state
-                                .tasks()
-                                .iter()
-                                .filter(|t| t.parent_id == Some(id))
-                                .count()
-                        )
-                    }),
+                    .flex()
+                    .items_start()
+                    .ml(text_inset)
+                    .child(
+                        Icon::new(Lucide::TextAlignStart)
+                            .small()
+                            .mt(px(4.))
+                            .text_color(palette.faint),
+                    )
+                    .child(
+                        div().flex_1().min_w_0().child(
+                            Textarea::new(&overview.description)
+                                .appearance(false)
+                                .small()
+                                .text_size(px(14.))
+                                .text_color(palette.muted),
+                        ),
+                    ),
             )
+            .child(div().h(px(20.)))
+            .when(!subtasks.is_empty(), |d| {
+                d.child(
+                    div()
+                        .ml(text_inset)
+                        .pb_1()
+                        .border_b_1()
+                        .border_color(palette.hairline)
+                        .text_size(px(14.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(format!(
+                            "Sub-tasks {}/{}",
+                            subtasks.len() - open_subtasks,
+                            subtasks.len()
+                        )),
+                )
+            })
             .children(subtasks.into_iter().map(|sub| {
                 let sid = sub.id;
                 let done = sub.is_completed();
@@ -241,7 +246,8 @@ impl Workspace {
                     .flex()
                     .items_center()
                     .gap_2p5()
-                    .py_1p5()
+                    .ml(text_inset)
+                    .py_2()
                     .border_b_1()
                     .border_color(palette.hairline)
                     .cursor_pointer()
@@ -273,104 +279,159 @@ impl Workspace {
                     }))
             }))
             .child(
-                div().text_size(px(13.5)).child(
-                    Input::new(&overview.subtask)
-                        .small()
-                        .prefix(Icon::new(Lucide::Plus).xsmall()),
-                ),
+                div()
+                    .ml(text_inset - px(OVERVIEW_INPUT_PAD))
+                    .pb_3()
+                    .border_b_1()
+                    .border_color(palette.hairline)
+                    .child(
+                        Input::new(&overview.subtask)
+                            .appearance(false)
+                            .text_size(px(14.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .h(px(28.))
+                            .prefix(Icon::new(Lucide::Plus).small().text_color(palette.muted)),
+                    ),
             );
 
         let side_label = |label: &'static str| {
             div()
-                .text_size(px(12.))
+                .text_size(px(13.))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(palette.muted)
                 .child(label)
         };
-        let side = div()
-            .flex()
-            .flex_col()
-            .w(px(250.))
-            .flex_none()
-            .gap_1()
-            .p_4()
-            .bg(palette.sidebar)
-            .border_l_1()
-            .border_color(palette.hairline)
-            .child(side_label("Project"))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .child(
-                        div()
-                            .size(px(9.))
-                            .rounded_full()
-                            .bg(project.map_or(palette.accent, |p| theme::project_color(p.color))),
-                    )
-                    .child(project_menu),
-            )
-            .child(div().h(px(1.)).bg(palette.hairline).my_2())
-            .child(side_label("Date"))
-            .child(side_control(
-                Button::new("overview-date")
-                    .ghost()
-                    .small()
-                    .icon(Icon::new(Lucide::Calendar))
-                    .label(
-                        due_label
-                            .as_ref()
-                            .map_or("No date".to_owned(), |(l, _)| l.clone()),
-                    )
-                    .when_some(due_label.map(|(_, c)| c), |b, c| b.text_color(c))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_overview_picker(true, window, cx)
-                    })),
-                date_picker,
-                palette,
-            ))
-            .child(div().h(px(1.)).bg(palette.hairline).my_2())
-            .child(side_label("Reminders"))
-            .children(
-                reminders
-                    .into_iter()
-                    .map(|r| div().px_2().text_size(px(13.)).child(r)),
-            )
-            .child(side_control(
-                Button::new("overview-reminders")
-                    .ghost()
-                    .small()
-                    .icon(Icon::new(Lucide::Bell))
-                    .label(if task.reminders.is_empty() {
-                        "Add reminder"
-                    } else {
-                        "Edit reminders"
-                    })
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_overview_picker(false, window, cx)
-                    })),
-                reminder_editor,
-                palette,
-            ));
-
-        let can_step_back = self.state.overview_neighbour(-1).is_some();
-        let can_step_on = self.state.overview_neighbour(1).is_some();
-        Some(
-            Self::card(palette, 860.)
+        // A section of the side panel: its label with an optional button on the right, then its values, divided
+        // from the next.
+        let section = |label: &'static str, add: Option<Button>| {
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .py(px(10.))
+                .border_b_1()
+                .border_color(palette.hairline)
                 .child(
                     div()
                         .flex()
                         .items_center()
                         .justify_between()
-                        .px_4()
-                        .py_2()
+                        .h(px(24.))
+                        .child(side_label(label))
+                        .children(add),
+                )
+        };
+        let add_button = |id: &'static str, tooltip: &'static str| {
+            Button::new(id)
+                .ghost()
+                .small()
+                .icon(Icon::new(Lucide::Plus))
+                .tooltip(tooltip)
+        };
+
+        let project_icon = || match &project {
+            Some(p) if !p.is_inbox => {
+                Icon::new(Lucide::Hash).text_color(theme::project_color(p.color))
+            }
+            _ => Icon::new(Lucide::Inbox),
+        };
+        let header_icon = project_icon();
+        let project_value = side_value(
+            Button::new("overview-project"),
+            project_icon(),
+            project
+                .as_ref()
+                .map_or("Inbox".to_owned(), |p| p.name.clone()),
+        )
+        .dropdown_menu(move |mut menu, _, _| {
+            for p in &projects {
+                let (pid, entity) = (p.id, entity.clone());
+                menu = menu.item(PopupMenuItem::new(p.name.clone()).on_click(
+                    move |_, window, cx| {
+                        entity.update(cx, |this, cx| {
+                            this.act(window, cx, |s| s.move_task_to(id, pid))
+                        });
+                    },
+                ));
+            }
+            menu
+        });
+
+        let open_date =
+            cx.listener(|this, _, window, cx| this.open_overview_picker(true, window, cx));
+        let open_reminders = || {
+            cx.listener(|this, _: &ClickEvent, window, cx| {
+                this.open_overview_picker(false, window, cx)
+            })
+        };
+        let date_section = match due_label {
+            None => section(
+                "Date",
+                Some(add_button("overview-date", "Add date").on_click(open_date)),
+            ),
+            Some((label, color)) => section("Date", None).child(
+                side_value(
+                    Button::new("overview-date"),
+                    Icon::new(Lucide::Calendar).text_color(color),
+                    label,
+                )
+                .text_color(color)
+                .on_click(open_date),
+            ),
+        };
+        let reminders_section = section(
+            "Reminders",
+            Some(add_button("overview-reminders", "Edit reminders").on_click(open_reminders())),
+        )
+        .children(reminders.into_iter().enumerate().map(|(i, r)| {
+            side_value(
+                Button::new(("overview-reminder", i)),
+                Icon::new(Lucide::Bell),
+                r,
+            )
+            .on_click(open_reminders())
+        }));
+
+        let side = div()
+            .flex()
+            .flex_col()
+            .w(px(260.))
+            .flex_none()
+            .px_6()
+            .pt_2()
+            .bg(palette.sidebar)
+            .child(section("Project", None).child(project_value))
+            .child(with_picker(date_section, date_picker, palette))
+            .child(with_picker(reminders_section, reminder_editor, palette));
+
+        let can_step_back = self.state.overview_neighbour(-1).is_some();
+        let can_step_on = self.state.overview_neighbour(1).is_some();
+        Some(
+            Self::card(palette, 864.)
+                // Todoist's overview fills the window's height, less the backdrop's top padding and a margin.
+                .h(window.viewport_size().height - px(MODAL_TOP + 40.))
+                .max_h_full()
+                .overflow_hidden()
+                .bg(palette.page)
+                .child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .justify_between()
+                        .h(px(48.))
+                        .pl(px(18.))
+                        .pr_3()
                         .border_b_1()
                         .border_color(palette.hairline)
                         .child(
                             div()
-                                .text_size(px(12.5))
-                                .text_color(palette.muted)
+                                .flex()
+                                .items_center()
+                                .gap_1()
+                                .text_size(px(14.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(header_icon.small())
                                 .child(breadcrumb.join(" / ")),
                         )
                         .child(
@@ -380,7 +441,7 @@ impl Workspace {
                                 .child(
                                     Button::new("overview-prev")
                                         .ghost()
-                                        .xsmall()
+                                        .small()
                                         .icon(Icon::new(Lucide::ChevronUp))
                                         .disabled(!can_step_back)
                                         .tooltip("Previous task (↑)")
@@ -391,7 +452,7 @@ impl Workspace {
                                 .child(
                                     Button::new("overview-next")
                                         .ghost()
-                                        .xsmall()
+                                        .small()
                                         .icon(Icon::new(Lucide::ChevronDown))
                                         .disabled(!can_step_on)
                                         .tooltip("Next task (↓)")
@@ -402,7 +463,7 @@ impl Workspace {
                                 .child(
                                     Button::new("overview-more")
                                         .ghost()
-                                        .xsmall()
+                                        .small()
                                         .icon(Icon::new(Lucide::Ellipsis))
                                         .tooltip("More actions")
                                         .dropdown_menu({
@@ -426,7 +487,7 @@ impl Workspace {
                                 .child(
                                     Button::new("overview-close")
                                         .ghost()
-                                        .xsmall()
+                                        .small()
                                         .icon(Icon::new(Lucide::X))
                                         .tooltip("Close (Esc)")
                                         .on_click(cx.listener(move |this, _, window, cx| {
@@ -436,14 +497,7 @@ impl Workspace {
                                 ),
                         ),
                 )
-                .child(
-                    div()
-                        .flex()
-                        .flex_1()
-                        .min_h(px(320.))
-                        .child(main)
-                        .child(side),
-                )
+                .child(div().flex().flex_1().min_h_0().child(main).child(side))
                 .into_any_element(),
         )
     }
@@ -860,35 +914,43 @@ impl Render for Workspace {
     }
 }
 
-/// A button in the overview's side panel, at its natural width on the left, with its picker (if open) hanging
-/// just below it.
-fn side_control(button: Button, picker: Option<AnyElement>, palette: &Palette) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .items_start()
-        .child(button)
-        .when_some(picker, |d, picker| {
-            // A zero-height box in the flow marks the spot under the button for the popover to anchor to.
-            d.child(
-                div().h_0().child(
-                    deferred(
-                        anchored().snap_to_window_with_margin(px(8.)).child(
-                            div()
-                                .occlude()
-                                .mt_1()
-                                .p_2()
-                                .rounded_lg()
-                                .border_1()
-                                .border_color(palette.card_border)
-                                .bg(palette.card)
-                                .shadow_lg()
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .child(picker),
-                        ),
-                    )
-                    .with_priority(3),
-                ),
-            )
-        })
+/// A value in a section of the overview's side panel: icon and text, flush with the label above. The button's
+/// own padding hangs out to the left so its hover background doesn't push the text in.
+fn side_value(button: Button, icon: Icon, label: impl Into<SharedString>) -> Button {
+    button.ghost().small().ml(px(-8.)).h(px(28.)).child(
+        div()
+            .flex()
+            .items_center()
+            .gap_2p5()
+            .text_size(px(14.))
+            .child(icon.small())
+            .child(label.into()),
+    )
+}
+
+/// `section` with the picker, if open, hanging just below it.
+fn with_picker(section: Div, picker: Option<AnyElement>, palette: &Palette) -> Div {
+    section.when_some(picker, |d, picker| {
+        // A zero-height box in the flow marks the spot under the section for the popover to anchor to.
+        d.child(
+            div().h_0().child(
+                deferred(
+                    anchored().snap_to_window_with_margin(px(8.)).child(
+                        div()
+                            .occlude()
+                            .mt_1()
+                            .p_2()
+                            .rounded_lg()
+                            .border_1()
+                            .border_color(palette.card_border)
+                            .bg(palette.card)
+                            .shadow_lg()
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .child(picker),
+                    ),
+                )
+                .with_priority(3),
+            ),
+        )
+    })
 }
