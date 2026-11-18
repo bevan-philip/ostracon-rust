@@ -48,8 +48,9 @@ These are the themes that kept coming up across the history and past sessions, r
 
 ### Due dates and reminders
 - A due date is a day with an optional time. Due labels are coloured by urgency (overdue, today, soon).
-- System notifications fire at each reminder and at the due time for timed tasks. A notification offers a Complete action and opens the task when clicked.
+- **Notifications are macOS-only** (see Platform support). System notifications fire at each reminder and at the due time for timed tasks. A notification offers a Complete action and opens the task when clicked.
 - If notifications are disabled, the app warns, and it checks again when it comes back into focus.
+- On other platforms, reminders and due dates are still stored, edited and shown; they just don't notify.
 
 ### List interaction
 - Keyboard: ↑/↓ or J/K to move; ←/→ to collapse or expand (← on a leaf goes to its parent); Space or ⌘Return to complete; Return or ⌘E to edit; Tab/⇧Tab to indent/outdent; ⌥⌘↑/↓ to reorder; Delete to delete, with confirmation.
@@ -98,6 +99,12 @@ These are the themes that kept coming up across the history and past sessions, r
 - Pushing a `v*` tag triggers a CI release that runs the tests and attaches the built app to a GitHub release.
 - Installing on a second machine should be easy. Consider a build-from-source route such as a Homebrew formula or `cargo install` for the CLI and MCP server, so quarantine and signing problems don't block use.
 - Commits are atomic and bisectable, made straight to main.
+
+## Platform support
+
+- Everything is cross-platform by default. Any feature that can't easily be done the same way on every platform is built **for macOS only**, behind a single platform module, and the rest of the app doesn't depend on it.
+- At present the only such feature is **notifications**: scheduling them, the Complete action, opening a task from a notification, and checking whether permission was granted.
+- Before adding another macOS-only feature, try to find a cross-platform way to do it first.
 
 ## Design principles for the rewrite
 
