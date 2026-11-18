@@ -118,12 +118,6 @@ impl Palette {
             Urgency::Later => self.later,
         }
     }
-
-    /// The page, lightly tinted with the project's colour.
-    pub fn tinted_page(&self, color: ProjectColor) -> Hsla {
-        let tint = project_color(color);
-        mix(self.page, tint, if self.dark { 0.05 } else { 0.035 })
-    }
 }
 
 pub fn project_color(color: ProjectColor) -> Hsla {

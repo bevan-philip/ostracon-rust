@@ -26,10 +26,6 @@ const MAX_WIDTH: f32 = 820.;
 impl Workspace {
     pub fn render_list(&mut self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let palette = theme::palette(cx);
-        let project = self.state.current_project().cloned();
-        let page = project
-            .as_ref()
-            .map_or(palette.page, |p| palette.tinted_page(p.color));
         let now = ZonedDateTime::now();
         let items = self.state.list_items();
         let show_completed = self.state.show_completed;
@@ -81,7 +77,7 @@ impl Workspace {
             .flex_col()
             .flex_1()
             .h_full()
-            .bg(page)
+            .bg(palette.page)
             .child(
                 div()
                     .id("task-list")
