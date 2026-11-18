@@ -7,7 +7,6 @@ default-members = ["crates/ostracon-core", "crates/ostracon-mcp", "crates/ostrac
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/bevan-philip/ostracon-rust"
 
 [workspace.dependencies]
 ostracon-core = { path = "crates/ostracon-core" }

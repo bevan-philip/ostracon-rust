@@ -213,7 +213,9 @@ impl Repository {
             return query();
         }
         self.conn.execute_batch("BEGIN DEFERRED")?;
+        self.depth.set(1);
         let result = query();
+        self.depth.set(0);
         let _ = self.conn.execute_batch("COMMIT");
         result
     }

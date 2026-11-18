@@ -83,7 +83,7 @@ impl BackupFolder {
                     .unwrap_or(SystemTime::UNIX_EPOCH),
             })
             .collect();
-        backups.sort_by(|a, b| b.modified.cmp(&a.modified));
+        backups.sort_by_key(|b| std::cmp::Reverse(b.modified));
         backups
     }
 

@@ -410,3 +410,11 @@ fn schedule_includes_due_times_and_skips_the_past_and_completed() {
         format!("task-{}-{}", a.id, upcoming[0].fire_at.as_second())
     );
 }
+
+#[test]
+fn snapshots_outside_a_transaction() {
+    let repo = Repository::in_memory().unwrap();
+    add(&repo, "A", None);
+    let snapshot = repo.snapshot().unwrap();
+    assert_eq!((snapshot.projects.len(), snapshot.tasks.len()), (1, 1));
+}
