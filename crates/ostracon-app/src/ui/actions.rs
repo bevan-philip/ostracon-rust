@@ -1,0 +1,96 @@
+//! Actions and their key bindings.
+
+use gpui_kit::*;
+
+gpui_kit::actions!(
+    ostracon,
+    [
+        Quit,
+        NewTask,
+        NewSubtask,
+        NewProject,
+        ToggleShowCompleted,
+        OpenOverview,
+        OpenSettings,
+        Undo,
+        Project1,
+        Project2,
+        Project3,
+        Project4,
+        Project5,
+        Project6,
+        Project7,
+        Project8,
+        Project9,
+        SelectNext,
+        SelectPrevious,
+        ExtendNext,
+        ExtendPrevious,
+        CollapseOrParent,
+        Expand,
+        Complete,
+        Edit,
+        Indent,
+        Outdent,
+        MoveUp,
+        MoveDown,
+        Delete,
+        Escape,
+        Confirm,
+    ]
+);
+
+/// Plain keys in the list must not fire while typing in a field.
+const LIST: &str = "TaskList && !QuickAdd && !Input";
+
+pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("cmd-q", Quit, None),
+        KeyBinding::new("cmd-n", NewTask, None),
+        KeyBinding::new("alt-cmd-n", NewSubtask, None),
+        KeyBinding::new("shift-cmd-n", NewProject, None),
+        KeyBinding::new("shift-cmd-c", ToggleShowCompleted, None),
+        KeyBinding::new("cmd-o", OpenOverview, None),
+        KeyBinding::new("cmd-,", OpenSettings, None),
+        KeyBinding::new("cmd-1", Project1, None),
+        KeyBinding::new("cmd-2", Project2, None),
+        KeyBinding::new("cmd-3", Project3, None),
+        KeyBinding::new("cmd-4", Project4, None),
+        KeyBinding::new("cmd-5", Project5, None),
+        KeyBinding::new("cmd-6", Project6, None),
+        KeyBinding::new("cmd-7", Project7, None),
+        KeyBinding::new("cmd-8", Project8, None),
+        KeyBinding::new("cmd-9", Project9, None),
+        KeyBinding::new("a", NewTask, Some(LIST)),
+        KeyBinding::new("q", NewTask, Some(LIST)),
+        KeyBinding::new("shift-a", NewSubtask, Some(LIST)),
+        KeyBinding::new("cmd-z", Undo, Some(LIST)),
+        KeyBinding::new("down", SelectNext, Some(LIST)),
+        KeyBinding::new("j", SelectNext, Some(LIST)),
+        KeyBinding::new("up", SelectPrevious, Some(LIST)),
+        KeyBinding::new("k", SelectPrevious, Some(LIST)),
+        KeyBinding::new("shift-down", ExtendNext, Some(LIST)),
+        KeyBinding::new("shift-up", ExtendPrevious, Some(LIST)),
+        KeyBinding::new("left", CollapseOrParent, Some(LIST)),
+        KeyBinding::new("right", Expand, Some(LIST)),
+        KeyBinding::new("space", Complete, Some(LIST)),
+        KeyBinding::new("cmd-enter", Complete, Some(LIST)),
+        KeyBinding::new("enter", Edit, Some(LIST)),
+        KeyBinding::new("cmd-e", Edit, Some(LIST)),
+        KeyBinding::new("tab", Indent, Some(LIST)),
+        KeyBinding::new("cmd-]", Indent, Some(LIST)),
+        KeyBinding::new("shift-tab", Outdent, Some(LIST)),
+        KeyBinding::new("cmd-[", Outdent, Some(LIST)),
+        KeyBinding::new("alt-cmd-up", MoveUp, Some(LIST)),
+        KeyBinding::new("alt-cmd-down", MoveDown, Some(LIST)),
+        KeyBinding::new("backspace", Delete, Some(LIST)),
+        KeyBinding::new("delete", Delete, Some(LIST)),
+        KeyBinding::new("escape", Escape, Some(LIST)),
+        // Modal layers: the overview steps between tasks, dialogs confirm and cancel.
+        KeyBinding::new("escape", Escape, Some("Modal")),
+        KeyBinding::new("up", SelectPrevious, Some("Overview && !Input")),
+        KeyBinding::new("down", SelectNext, Some("Overview && !Input")),
+        KeyBinding::new("enter", Confirm, Some("Dialog && !Input")),
+    ]);
+    crate::ui::quick_add::bind_keys(cx);
+}

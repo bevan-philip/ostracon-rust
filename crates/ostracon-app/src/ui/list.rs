@@ -1,0 +1,484 @@
+//! The task list: a flat, Todoist-style outline with hairline dividers that start at the checkbox, disclosure
+//! chevrons hanging in the left margin, and the composer inline where it belongs.
+
+use std::time::Duration;
+
+use gpui_kit::assets::IconName as Lucide;
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::{Icon, Sizable as _};
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::*;
+use jiff::ZonedDateTime;
+use ostracon_core::TaskId;
+use ostracon_core::tree::TaskRow;
+
+use super::theme::{self, CHECKBOX, INDENT, META_TEXT, Palette, TASK_TEXT};
+use super::workspace::{DraggedTasks, Workspace};
+use crate::format;
+use crate::state::{Composer, ListItem};
+
+/// The list's left edge to the checkbox: room for the chevrons hanging in the margin.
+const GUTTER: f32 = 40.;
+const MAX_WIDTH: f32 = 820.;
+
+impl Workspace {
+    pub fn render_list(&mut self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let palette = theme::palette(cx);
+        let project = self.state.current_project().cloned();
+        let page = project
+            .as_ref()
+            .map_or(palette.page, |p| palette.tinted_page(p.color));
+        let now = ZonedDateTime::now();
+        let items = self.state.list_items();
+        let show_completed = self.state.show_completed;
+        let empty = self.state.rows().is_empty() && self.state.composer == Composer::Closed;
+
+        let mut rows: Vec<AnyElement> = Vec::new();
+        for item in items {
+            match item {
+                ListItem::Task(row) => rows.push(self.render_row(&row, &now, &palette, cx)),
+                ListItem::Composer { depth, .. } => {
+                    if let Some(composer) = &self.composer {
+                        rows.push(
+                            div()
+                                .pl(px(GUTTER + depth as f32 * INDENT - 4.))
+                                .py_2()
+                                .child(composer.clone())
+                                .into_any_element(),
+                        );
+                    }
+                }
+            }
+        }
+        if self.state.composer == Composer::Closed {
+            rows.push(
+                div()
+                    .id("add-task")
+                    .flex()
+                    .items_center()
+                    .gap_2p5()
+                    .pl(px(GUTTER))
+                    .py_2()
+                    .cursor_pointer()
+                    .text_size(px(TASK_TEXT))
+                    .text_color(palette.muted)
+                    .hover(|d| d.text_color(palette.accent))
+                    .child(Icon::new(Lucide::Plus).small().text_color(palette.accent))
+                    .child("Add task")
+                    .on_click(
+                        cx.listener(|this, _, window, cx| {
+                            this.act(window, cx, |s| s.start_adding())
+                        }),
+                    )
+                    .into_any_element(),
+            );
+        }
+
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .h_full()
+            .bg(page)
+            .child(
+                div()
+                    .id("task-list")
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.list_scroll)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .max_w(px(MAX_WIDTH))
+                            .mx_auto()
+                            .w_full()
+                            .px_6()
+                            .pt(px(44.))
+                            .pb(px(120.))
+                            .child(self.render_header(&palette, show_completed, cx))
+                            .children(self.render_banners(&palette, cx))
+                            .children(rows)
+                            .when(empty, |d| {
+                                d.child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .gap_1()
+                                        .mt(px(80.))
+                                        .child(div().text_size(px(16.)).text_color(palette.text).child("All clear"))
+                                        .child(
+                                            div()
+                                                .text_size(px(13.5))
+                                                .text_color(palette.muted)
+                                                .child("Press A or Q to add a task. Try \"Pay rent tomorrow 9am #Home\"."),
+                                        ),
+                                )
+                            }),
+                    ),
+            )
+    }
+
+    fn render_header(
+        &self,
+        palette: &Palette,
+        show_completed: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let name = self
+            .state
+            .current_project()
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .pl(px(GUTTER))
+            .mb_3()
+            .child(
+                div()
+                    .text_size(px(26.))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(palette.text)
+                    .child(name),
+            )
+            .child(
+                Button::new("show-completed")
+                    .ghost()
+                    .small()
+                    .icon(Icon::new(if show_completed {
+                        Lucide::EyeOff
+                    } else {
+                        Lucide::Eye
+                    }))
+                    .label(if show_completed {
+                        "Hide completed"
+                    } else {
+                        "Show completed"
+                    })
+                    .tooltip("⇧⌘C")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.act(window, cx, |s| s.set_show_completed(!s.show_completed))
+                    })),
+            )
+    }
+
+    fn render_banners(&self, palette: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let mut banners = Vec::new();
+        if let Some(error) = self.state.error.clone() {
+            banners.push(
+                banner(palette, palette.overdue.opacity(0.1), palette.overdue)
+                    .child(div().flex_1().child(error))
+                    .child(
+                        Button::new("dismiss-error")
+                            .ghost()
+                            .xsmall()
+                            .icon(Icon::new(Lucide::X))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.state.error = None;
+                                cx.notify();
+                            })),
+                    )
+                    .into_any_element(),
+            );
+        }
+        if self.notifications_blocked() {
+            banners.push(
+                banner(palette, palette.warning_bg, palette.warning_text)
+                    .child(Icon::new(Lucide::BellOff).small())
+                    .child(div().flex_1().child(
+                        "Notifications are off for Ostracon, so reminders won't appear. Turn them on in System Settings → Notifications.",
+                    ))
+                    .into_any_element(),
+            );
+        }
+        banners
+    }
+
+    fn render_row(
+        &self,
+        row: &TaskRow,
+        now: &ZonedDateTime,
+        palette: &Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let task = &row.task;
+        let id = task.id;
+        let selected = self.state.selection.contains(id);
+        let completed = task.is_completed();
+        let indent = row.depth as f32 * INDENT;
+
+        let chevron = row.has_children().then(|| {
+            let collapsed = task.collapsed;
+            div()
+                .id(("chevron", id.0 as usize))
+                .absolute()
+                .left(px(-26.))
+                .top(px(11.))
+                .size(px(22.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_md()
+                .cursor_pointer()
+                .text_color(palette.faint)
+                .hover(|d| d.bg(palette.sidebar_hover).text_color(palette.text))
+                .child(
+                    Icon::new(if collapsed {
+                        Lucide::ChevronRight
+                    } else {
+                        Lucide::ChevronDown
+                    })
+                    .small(),
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    cx.stop_propagation();
+                    this.act(window, cx, |s| s.set_collapsed(id, !collapsed));
+                }))
+        });
+
+        let checkbox = div()
+            .id(("check", id.0 as usize))
+            .group("check")
+            .flex_none()
+            .mt(px(3.))
+            .size(px(CHECKBOX))
+            .rounded_full()
+            .border(px(1.5))
+            .border_color(if completed {
+                palette.faint
+            } else {
+                palette.muted
+            })
+            .when(completed, |d| d.bg(palette.faint))
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_pointer()
+            .child(
+                div()
+                    .text_color(if completed {
+                        palette.page
+                    } else {
+                        transparent_black()
+                    })
+                    .when(!completed, |d| {
+                        d.group_hover("check", move |s| s.text_color(palette.muted))
+                    })
+                    .child(Icon::new(Lucide::Check).xsmall()),
+            )
+            .on_click(cx.listener(move |this, _, window, cx| {
+                cx.stop_propagation();
+                this.act(window, cx, |s| s.toggle_completed_of(&[id]));
+            }));
+
+        let mut meta: Vec<AnyElement> = Vec::new();
+        if let Some(due) = task.due {
+            let color = if completed {
+                palette.faint
+            } else {
+                palette.urgency(format::urgency(due, now))
+            };
+            meta.push(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .text_color(color)
+                    .child(Icon::new(Lucide::Calendar).xsmall())
+                    .child(format::due_label(due, now))
+                    .into_any_element(),
+            );
+        }
+        if !task.reminders.is_empty() {
+            meta.push(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_0p5()
+                    .child(Icon::new(Lucide::Bell).xsmall())
+                    .when(task.reminders.len() > 1, |d| {
+                        d.child(task.reminders.len().to_string())
+                    })
+                    .into_any_element(),
+            );
+        }
+        if row.subtask_count > 0 {
+            meta.push(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(Icon::new(Lucide::GitBranch).xsmall())
+                    .child(format!(
+                        "{}/{}",
+                        row.completed_subtask_count, row.subtask_count
+                    ))
+                    .into_any_element(),
+            );
+        }
+        let hidden = row.hidden_completed_count();
+        if hidden > 0 && !self.state.show_completed {
+            meta.push(
+                div()
+                    .child(format!("{hidden} completed hidden"))
+                    .into_any_element(),
+            );
+        }
+
+        let description = task
+            .description
+            .lines()
+            .next()
+            .map(str::to_owned)
+            .filter(|d| !d.is_empty());
+        let label: SharedString = {
+            let ids = self.state.acting_on(Some(id));
+            if ids.len() > 1 {
+                format!("{} tasks", ids.len()).into()
+            } else {
+                task.name.clone().into()
+            }
+        };
+
+        div()
+            .id(("task", id.0 as usize))
+            .relative()
+            .pl(px(GUTTER + indent))
+            .cursor_pointer()
+            .when(selected, |d| d.bg(palette.row_selected))
+            .when(!selected, |d| d.hover(|d| d.bg(palette.row_hover)))
+            .rounded_md()
+            .on_drag(
+                DraggedTasks {
+                    ids: Vec::new(),
+                    label,
+                },
+                {
+                    let ids = self.state.acting_on(Some(id));
+                    move |drag: &DraggedTasks, _, _, cx| {
+                        let mut drag = drag.clone();
+                        drag.ids = ids.clone();
+                        cx.new(|_| drag)
+                    }
+                },
+            )
+            .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                this.click_row(id, event, window, cx)
+            }))
+            .child(
+                div()
+                    .relative()
+                    .flex()
+                    .gap(px(10.))
+                    .py(px(9.))
+                    .border_b_1()
+                    .border_color(palette.hairline)
+                    .children(chevron)
+                    .child(checkbox)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_0p5()
+                            .child(
+                                div()
+                                    .text_size(px(TASK_TEXT))
+                                    .line_height(px(24.))
+                                    .text_color(if completed {
+                                        palette.faint
+                                    } else {
+                                        palette.text
+                                    })
+                                    .when(completed, |d| d.line_through())
+                                    .child(task.name.clone()),
+                            )
+                            .when_some(description, |d, text| {
+                                d.child(
+                                    div()
+                                        .text_size(px(META_TEXT))
+                                        .text_color(palette.muted)
+                                        .overflow_hidden()
+                                        .text_ellipsis()
+                                        .whitespace_nowrap()
+                                        .child(text),
+                                )
+                            })
+                            .when(!meta.is_empty(), |d| {
+                                d.child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_3()
+                                        .text_size(px(META_TEXT))
+                                        .text_color(palette.muted)
+                                        .children(meta),
+                                )
+                            }),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// ⌘-click toggles, ⇧-click extends, a double click edits in place, and a single click selects and then
+    /// opens the overview (unless it turns out to be a double click).
+    fn click_row(
+        &mut self,
+        id: TaskId,
+        event: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let modifiers = event.modifiers();
+        if modifiers.platform {
+            self.pending_open = None;
+            self.act(window, cx, |s| s.toggle_selection(id));
+            return;
+        }
+        if modifiers.shift {
+            self.pending_open = None;
+            self.act(window, cx, |s| s.extend_selection_to(id));
+            return;
+        }
+        if event.click_count() >= 2 {
+            self.pending_open = None;
+            self.act(window, cx, |s| {
+                s.close_overview();
+                s.start_editing(Some(id));
+            });
+            return;
+        }
+        self.act(window, cx, |s| s.select_only(id));
+        self.pending_open = Some(cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(280))
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.pending_open = None;
+                if this.state.composer == Composer::Closed {
+                    this.act(window, cx, |s| s.open_overview(id));
+                }
+            });
+        }));
+    }
+}
+
+fn banner(palette: &Palette, background: Hsla, text: Hsla) -> Div {
+    let _ = palette;
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .ml(px(GUTTER))
+        .mb_3()
+        .px_3()
+        .py_2()
+        .rounded_lg()
+        .bg(background)
+        .text_color(text)
+        .text_size(px(13.))
+}

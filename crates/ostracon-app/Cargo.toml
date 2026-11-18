@@ -19,6 +19,8 @@ ostracon-core.workspace = true
 jiff.workspace = true
 # gpui and gpui-component come only through the kit, exact-pinned.
 gpui-kit = "=0.9.0"
+# Only to talk to gpui-kit's calendar, which works in chrono dates; Ostracon itself uses jiff.
+chrono = { version = "0.4", default-features = false }
 
 [dev-dependencies]
 gpui-kit = { version = "=0.9.0", features = ["test-support"] }
