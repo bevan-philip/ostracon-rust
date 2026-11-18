@@ -400,6 +400,30 @@ impl Workspace {
                                         })),
                                 )
                                 .child(
+                                    Button::new("overview-more")
+                                        .ghost()
+                                        .xsmall()
+                                        .icon(Icon::new(Lucide::Ellipsis))
+                                        .tooltip("More actions")
+                                        .dropdown_menu({
+                                            let entity = cx.entity();
+                                            move |menu, _, _| {
+                                                let entity = entity.clone();
+                                                menu.item(
+                                                    PopupMenuItem::new("Delete task…")
+                                                        .icon(Icon::new(Lucide::Trash))
+                                                        .on_click(move |_, window, cx| {
+                                                            entity.update(cx, |this, cx| {
+                                                                this.act(window, cx, |s| {
+                                                                    s.request_delete(Some(id))
+                                                                })
+                                                            });
+                                                        }),
+                                                )
+                                            }
+                                        }),
+                                )
+                                .child(
                                     Button::new("overview-close")
                                         .ghost()
                                         .xsmall()

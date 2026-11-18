@@ -275,3 +275,31 @@ fn escape_closes_an_overview_picker_then_the_overview(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(workspace.read_with(cx, |w, _| w.state.overview), None);
 }
+
+#[gpui_kit::test]
+fn deleting_from_the_overview(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let (workspace, cx) = open(cx, |repo| {
+        for name in ["A", "B"] {
+            repo.add_task(NewTask {
+                name: name.into(),
+                ..Default::default()
+            })
+            .unwrap();
+        }
+    });
+    cx.simulate_keystrokes("j cmd-o");
+    cx.run_until_parked();
+    cx.update(|window, cx| window.click("overview-more", cx));
+    cx.run_until_parked();
+    cx.update(|window, cx| window.within("popup-menu").click(0usize, cx));
+    cx.run_until_parked();
+    assert!(matches!(
+        workspace.read_with(cx, |w, _| w.state.dialog.clone()),
+        Dialog::ConfirmDeleteTasks(_)
+    ));
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["B"]);
+    assert_eq!(workspace.read_with(cx, |w, _| w.state.overview), None);
+}
