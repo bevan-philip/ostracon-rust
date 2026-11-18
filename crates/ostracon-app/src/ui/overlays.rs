@@ -915,17 +915,24 @@ impl Render for Workspace {
 }
 
 /// A value in a section of the overview's side panel: icon and text, flush with the label above. The button's
-/// own padding hangs out to the left so its hover background doesn't push the text in.
+/// own padding hangs out to the left so its hover background doesn't push the text in. It is only as wide as
+/// its content: stretched across the section, the button would centre it.
 fn side_value(button: Button, icon: Icon, label: impl Into<SharedString>) -> Button {
-    button.ghost().small().ml(px(-8.)).h(px(28.)).child(
-        div()
-            .flex()
-            .items_center()
-            .gap_2p5()
-            .text_size(px(14.))
-            .child(icon.small())
-            .child(label.into()),
-    )
+    button
+        .ghost()
+        .small()
+        .self_start()
+        .ml(px(-8.))
+        .h(px(28.))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2p5()
+                .text_size(px(14.))
+                .child(icon.small())
+                .child(label.into()),
+        )
 }
 
 /// `section` with the picker, if open, hanging just below it.
