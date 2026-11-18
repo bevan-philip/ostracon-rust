@@ -360,11 +360,11 @@ impl Workspace {
             (&overview.picker, date),
             (OverviewPicker::Date(_), true) | (OverviewPicker::Reminders(_), false)
         );
-        overview.picker = OverviewPicker::Closed;
         if already {
-            cx.notify();
+            self.close_overview_picker(window, cx);
             return;
         }
+        overview.picker = OverviewPicker::Closed;
         let id = task.id;
         if date {
             let picker = cx.new(|cx| DatePicker::new(task.due, window, cx));
@@ -374,9 +374,7 @@ impl Workspace {
                 move |this, _, event: &PickerEvent<Option<_>>, window, cx| {
                     let PickerEvent::Chosen(due) = event;
                     this.state.set_due_of_only(id, *due);
-                    if let Some(o) = &mut this.overview {
-                        o.picker = OverviewPicker::Closed;
-                    }
+                    this.close_overview_picker(window, cx);
                     this.sync(window, cx);
                 },
             ));
@@ -397,6 +395,16 @@ impl Workspace {
             editor.update(cx, |e, cx| e.focus(window, cx));
             overview.picker = OverviewPicker::Reminders(editor);
         }
+        cx.notify();
+    }
+
+    /// Closes the overview's date or reminder picker. Focus was inside it, so it goes back to the overview,
+    /// where Esc and the arrows keep working.
+    pub fn close_overview_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(overview) = &mut self.overview {
+            overview.picker = OverviewPicker::Closed;
+        }
+        window.focus(&self.modal_focus, cx);
         cx.notify();
     }
 
@@ -627,7 +635,7 @@ impl Workspace {
         self.act(window, cx, |s| s.request_delete(None));
     }
 
-    fn confirm(&mut self, _: &Confirm, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn confirm(&mut self, _: &Confirm, window: &mut Window, cx: &mut Context<Self>) {
         if let Panel::ConfirmRestore(path) = &self.panel {
             let path = path.clone();
             self.panel = Panel::Settings;
@@ -645,12 +653,13 @@ impl Workspace {
 
     /// Esc closes the topmost layer: a picker, a confirmation, settings, a dialog, the overview, then the
     /// selection.
-    fn escape(&mut self, _: &Escape, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(overview) = &mut self.overview
-            && !matches!(overview.picker, OverviewPicker::Closed)
+    pub fn escape(&mut self, _: &Escape, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .overview
+            .as_ref()
+            .is_some_and(|o| !matches!(o.picker, OverviewPicker::Closed))
         {
-            overview.picker = OverviewPicker::Closed;
-            cx.notify();
+            self.close_overview_picker(window, cx);
             return;
         }
         match &self.panel {

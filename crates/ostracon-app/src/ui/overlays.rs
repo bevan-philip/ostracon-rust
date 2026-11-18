@@ -11,6 +11,7 @@ use jiff::ZonedDateTime;
 use ostracon_core::backup::Backup;
 use ostracon_core::{ProjectColor, TaskId};
 
+use super::actions::{Confirm, Escape};
 use super::theme::{self, Palette, TASK_TEXT};
 use super::workspace::{OverviewPicker, Panel, Workspace};
 use crate::format;
@@ -69,10 +70,12 @@ impl Workspace {
                 .key_context(format!("Modal {context}").as_str())
                 .track_focus(&self.modal_focus)
                 .occlude()
-                // A click on the backdrop closes the top layer, as Esc does.
-                .on_mouse_down(MouseButton::Left, |_, window, cx| {
-                    window.dispatch_action(Box::new(super::actions::Escape), cx);
-                })
+                // A click on the backdrop closes the top layer, as Esc does. It calls the handler rather than
+                // dispatching the action, which would need focus to be inside the modal.
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, window, cx| this.escape(&Escape, window, cx)),
+                )
                 .child(content)
                 .into_any_element(),
         )
@@ -539,17 +542,17 @@ impl Workspace {
                         Button::new("dialog-cancel")
                             .small()
                             .label("Cancel")
-                            .on_click(cx.listener(|_, _, window, cx| {
-                                window.dispatch_action(Box::new(super::actions::Escape), cx);
-                            })),
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.escape(&Escape, window, cx)),
+                            ),
                     )
                     .child(
                         Button::new("dialog-confirm")
                             .small()
                             .danger()
                             .label(action)
-                            .on_click(cx.listener(|_, _, window, cx| {
-                                window.dispatch_action(Box::new(super::actions::Confirm), cx);
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.confirm(&Confirm, window, cx)
                             })),
                     ),
             )

@@ -248,3 +248,30 @@ fn right_click_menu_selects_the_row_and_deletes_it(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(names(&workspace, cx), ["A"]);
 }
+
+#[gpui_kit::test]
+fn escape_closes_an_overview_picker_then_the_overview(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let (workspace, cx) = open(cx, |repo| {
+        repo.add_task(NewTask {
+            name: "A".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    });
+    cx.simulate_keystrokes("j cmd-o");
+    cx.run_until_parked();
+    for button in ["overview-date", "overview-reminders"] {
+        cx.update(|window, cx| window.click(button, cx));
+        cx.run_until_parked();
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert!(
+            workspace.read_with(cx, |w, _| w.state.overview.is_some()),
+            "the first Esc closes only the picker"
+        );
+    }
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(workspace.read_with(cx, |w, _| w.state.overview), None);
+}
