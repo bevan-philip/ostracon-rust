@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/ostracon-core", "crates/ostracon-mcp", "crates/ostracon-app"]
-default-members = ["crates/ostracon-core", "crates/ostracon-mcp", "crates/ostracon-app"]
+members = ["crates/ostracon-core", "crates/ostracon-mcp", "crates/ostracon-cli", "crates/ostracon-app"]
+default-members = ["crates/ostracon-core", "crates/ostracon-mcp", "crates/ostracon-cli", "crates/ostracon-app"]
 
 [workspace.package]
 version = "0.1.0"

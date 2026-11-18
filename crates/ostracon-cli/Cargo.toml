@@ -1,0 +1,16 @@
+[package]
+name = "ostracon-cli"
+description = "Ostracon's tasks from the shell"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ostracon"
+path = "src/main.rs"
+
+[dependencies]
+ostracon-core.workspace = true
+serde_json.workspace = true
+jiff.workspace = true
+clap = { version = "4", features = ["derive", "wrap_help"] }
