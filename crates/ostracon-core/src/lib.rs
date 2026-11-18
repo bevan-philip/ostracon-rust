@@ -1,0 +1,8 @@
+//! Ostracon's core: the data model, storage, quick-add parsing, the task tree, reminder schedule,
+//! backups and the tool layer shared by the CLI and the MCP server. No UI.
+
+pub mod dates;
+pub mod locale;
+pub mod model;
+
+pub use model::{Due, Project, ProjectColor, ProjectId, Reminder, Task, TaskId};
