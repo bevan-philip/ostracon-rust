@@ -27,3 +27,22 @@ tempfile.workspace = true
 [[test]]
 name = "state"
 path = "tests/state.rs"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3.2", features = ["NSArray", "NSBundle", "NSError", "NSObject", "NSSet", "NSString"] }
+objc2-user-notifications = { version = "0.3.2", features = [
+    "std",
+    "block2",
+    "UNNotification",
+    "UNNotificationAction",
+    "UNNotificationCategory",
+    "UNNotificationContent",
+    "UNNotificationRequest",
+    "UNNotificationResponse",
+    "UNNotificationSettings",
+    "UNNotificationSound",
+    "UNNotificationTrigger",
+    "UNUserNotificationCenter",
+] }

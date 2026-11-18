@@ -2,4 +2,5 @@
 //! tested headless; the views are thin layers over them.
 
 pub mod format;
+pub mod platform;
 pub mod state;

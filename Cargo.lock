@@ -4860,6 +4860,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-core-location"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca347214e24bc973fc025fd0d36ebb179ff30536ed1f80252706db19ee452009"
+dependencies = [
+ "objc2 0.6.5",
+ "objc2-foundation 0.3.2",
+]
+
+[[package]]
 name = "objc2-core-services"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5031,6 +5041,7 @@ dependencies = [
  "bitflags 2.13.2",
  "block2 0.6.2",
  "objc2 0.6.5",
+ "objc2-core-location",
  "objc2-foundation 0.3.2",
 ]
 
@@ -5159,8 +5170,12 @@ dependencies = [
 name = "ostracon-app"
 version = "0.1.0"
 dependencies = [
+ "block2 0.6.2",
  "gpui-kit",
  "jiff",
+ "objc2 0.6.5",
+ "objc2-foundation 0.3.2",
+ "objc2-user-notifications",
  "ostracon-core",
  "tempfile",
 ]
