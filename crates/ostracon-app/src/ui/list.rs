@@ -15,7 +15,7 @@ use super::actions::{Complete, Delete, Edit, NewSubtask, OpenOverview};
 use super::theme::{self, CHECKBOX, INDENT, META_TEXT, Palette, TASK_TEXT};
 use super::workspace::{DraggedTasks, Workspace};
 use crate::format;
-use crate::state::{Composer, ListItem};
+use crate::state::ListItem;
 
 /// The list's left edge to the checkbox: room for the chevrons hanging in the margin.
 const GUTTER: f32 = 40.;
@@ -27,7 +27,7 @@ impl Workspace {
         let now = ZonedDateTime::now();
         let items = self.state.list_items();
         let show_completed = self.state.show_completed;
-        let empty = self.state.rows().is_empty() && self.state.composer == Composer::Closed;
+        let empty = self.state.rows().is_empty() && !self.state.composer.is_in_list();
 
         let mut rows: Vec<AnyElement> = Vec::new();
         for item in items {
@@ -46,7 +46,7 @@ impl Workspace {
                 }
             }
         }
-        if self.state.composer == Composer::Closed {
+        if !self.state.composer.is_in_list() {
             rows.push(
                 div()
                     .id("add-task")
@@ -499,7 +499,7 @@ impl Workspace {
         } else {
             self.act(window, cx, |s| {
                 s.select_only(id);
-                if s.composer == Composer::Closed {
+                if !s.composer.is_in_list() {
                     s.open_overview(id);
                 }
             });

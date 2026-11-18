@@ -60,7 +60,7 @@ These are the themes that kept coming up across the history and past sessions, r
 - Double-clicking a task edits it in place. Clicking a task opens its overview.
 
 ### Task overview
-- A Todoist-style detail sheet showing the task's project and parent (breadcrumb), its name and description editable in place, its subtasks (each opens its own overview), a field to add subtasks, and the project, date and reminders down the side.
+- A Todoist-style detail sheet showing the task's project and parent (breadcrumb), its name and description editable in place, its subtasks (each opens its own overview), a button that opens the full composer to add subtasks, and the project, date and reminders down the side.
 - Arrow keys move to the previous or next task in the list. **No comments.**
 - The overview closes if its task is deleted or the project changes.
 

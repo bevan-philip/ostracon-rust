@@ -113,7 +113,7 @@ claude mcp add ostracon -- /Applications/Ostracon.app/Contents/MacOS/ostracon-mc
 | Where | Key | Action |
 | --- | --- | --- |
 | Anywhere | ⌘N, or A / Q in the list | Add a task |
-| | ⌥⌘N, or ⇧A in the list | Add a sub-task to the selected task |
+| | ⌥⌘N, or ⇧A in the list | Add a sub-task to the selected task, or in the overview to its task |
 | | ⇧⌘N | New project |
 | | ⌘1 … ⌘9 | Inbox, then projects |
 | | ⇧⌘C | Show or hide completed tasks |

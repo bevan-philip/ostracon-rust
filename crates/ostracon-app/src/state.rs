@@ -81,8 +81,26 @@ pub enum Composer {
     Closed,
     /// Adding a task at the end of the list, or at the end of `parent`'s subtasks.
     Adding { parent: Option<TaskId> },
+    /// Adding a subtask to `parent` from its open overview, below its subtasks there.
+    AddingInOverview { parent: TaskId },
     /// Editing a task in place.
     Editing { task: TaskId },
+}
+
+impl Composer {
+    /// Whether the composer is open in the list, rather than closed or in the overview.
+    pub fn is_in_list(self) -> bool {
+        matches!(self, Composer::Adding { .. } | Composer::Editing { .. })
+    }
+
+    /// The task a subtask is being added to.
+    pub fn parent(self) -> Option<TaskId> {
+        match self {
+            Composer::Adding { parent } => parent,
+            Composer::AddingInOverview { parent } => Some(parent),
+            Composer::Closed | Composer::Editing { .. } => None,
+        }
+    }
 }
 
 /// A modal dialog.
@@ -278,7 +296,7 @@ impl AppState {
     pub fn list_items(&self) -> Vec<ListItem> {
         let mut items: Vec<ListItem> = self.rows.iter().cloned().map(ListItem::Task).collect();
         match self.composer {
-            Composer::Closed => {}
+            Composer::Closed | Composer::AddingInOverview { .. } => {}
             Composer::Adding { parent: None } => items.push(ListItem::Composer {
                 mode: self.composer,
                 depth: 0,
@@ -494,6 +512,13 @@ impl AppState {
         };
     }
 
+    /// Opens the composer in the overview, to add a subtask to its task.
+    pub fn start_adding_subtask_in_overview(&mut self) {
+        if let Some(parent) = self.overview {
+            self.composer = Composer::AddingInOverview { parent };
+        }
+    }
+
     pub fn start_editing(&mut self, id: Option<TaskId>) {
         let Some(id) = id
             .or(self.selection.anchor())
@@ -550,19 +575,30 @@ impl AppState {
         let description = description.trim().to_owned();
         match self.composer {
             Composer::Closed => false,
-            Composer::Adding { parent } => {
+            Composer::Adding { .. } | Composer::AddingInOverview { .. } => {
                 // A subtask stays with its parent unless the text names another project.
-                let parent =
-                    parent.filter(|p| self.task(*p).is_some_and(|t| t.project_id == target));
+                let parent = self
+                    .composer
+                    .parent()
+                    .and_then(|p| self.task(p))
+                    .filter(|t| t.project_id == target)
+                    .map(|t| (t.id, t.collapsed));
                 let new = NewTask {
                     name: parsed.name,
                     description,
                     project_id: Some(target),
-                    parent_id: parent,
+                    parent_id: parent.map(|(id, _)| id),
                     due,
                     reminders,
                 };
-                if !self.perform(|repo| repo.add_task(new).map(drop)) {
+                let added = self.perform(|repo| {
+                    // The new subtask shows in the list, as in Todoist.
+                    if let Some((id, true)) = parent {
+                        repo.set_collapsed(id, false)?;
+                    }
+                    repo.add_task(new).map(drop)
+                });
+                if !added {
                     return false;
                 }
                 if target != self.project {
@@ -615,6 +651,9 @@ impl AppState {
     /// Closes the overview. Tasks it kept in the list leave it now, handing on the selection as a move would.
     pub fn close_overview(&mut self) {
         self.overview = None;
+        if matches!(self.composer, Composer::AddingInOverview { .. }) {
+            self.composer = Composer::Closed;
+        }
         if self.kept.is_empty() {
             return;
         }
@@ -691,28 +730,6 @@ impl AppState {
     /// Moves the overview's task. It keeps its place in the list until the overview closes.
     pub fn move_task_to(&mut self, id: TaskId, project: ProjectId) -> bool {
         self.move_tasks(&[id], project, self.overview.is_some())
-    }
-
-    pub fn add_subtask(&mut self, parent: TaskId, name: &str) -> bool {
-        let name = name.trim();
-        let Some(task) = self.task(parent) else {
-            return false;
-        };
-        if name.is_empty() {
-            return false;
-        }
-        let collapsed = task.collapsed;
-        self.perform(|repo| {
-            if collapsed {
-                repo.set_collapsed(parent, false)?;
-            }
-            repo.add_task(NewTask {
-                name: name.to_owned(),
-                parent_id: Some(parent),
-                ..Default::default()
-            })
-            .map(drop)
-        })
     }
 
     // Task actions
@@ -1215,7 +1232,7 @@ impl AppState {
     /// - The project on screen exists, or the Inbox is shown instead.
     /// - Selected tasks are rows in the list; one that left it hands its place to the collapsed parent hiding
     ///   it, as in Finder, or leaves the selection.
-    /// - The composer edits, or adds a subtask to, a task that is a row.
+    /// - The composer edits, or adds a subtask to, a task that is a row, or adds one to the overview's task.
     /// - The overview and dialogs refer to projects and tasks that still exist.
     pub fn reconcile(&mut self) {
         if self.current_project().is_none()
@@ -1273,6 +1290,9 @@ impl AppState {
                 if !self.is_in_list(task) =>
             {
                 // Open, it would be hidden yet hold the keyboard, or add a subtask no one can see.
+                self.composer = Composer::Closed;
+            }
+            Composer::AddingInOverview { parent } if self.overview != Some(parent) => {
                 self.composer = Composer::Closed;
             }
             _ => {}

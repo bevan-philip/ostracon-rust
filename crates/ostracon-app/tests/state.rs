@@ -163,6 +163,49 @@ fn subtask_composer_sits_after_the_parents_subtasks() {
 }
 
 #[test]
+fn the_overview_adds_subtasks_with_the_full_composer() {
+    let mut state = state();
+    let ids = add_outline(&mut state, "A\n B\nC");
+    state.set_collapsed(ids[0], true);
+    state.open_overview(ids[0]);
+    state.start_adding_subtask_in_overview();
+    assert_eq!(
+        state.composer,
+        Composer::AddingInOverview { parent: ids[0] }
+    );
+    assert!(
+        !state
+            .list_items()
+            .iter()
+            .any(|i| matches!(i, ListItem::Composer { .. })),
+        "the composer is in the overview, not the list"
+    );
+
+    let project = state.project;
+    assert!(state.submit_composer(&typed("D tomorrow"), "Notes", project, None, &[]));
+    assert_eq!(shown(&state), ["A", " B", " D", "C"], "the parent opens");
+    let added = state.subtasks(ids[0])[1];
+    assert_eq!(
+        (added.name.as_str(), added.description.as_str()),
+        ("D", "Notes")
+    );
+    assert!(added.due.is_some());
+    assert_eq!(state.overview, Some(ids[0]));
+    assert_eq!(
+        state.composer,
+        Composer::AddingInOverview { parent: ids[0] },
+        "it stays open for the next subtask"
+    );
+
+    // Stepping to another task, or closing the overview, closes it.
+    state.open_overview(ids[2]);
+    assert_eq!(state.composer, Composer::Closed);
+    state.start_adding_subtask_in_overview();
+    state.close_overview();
+    assert_eq!(state.composer, Composer::Closed);
+}
+
+#[test]
 fn keyboard_selection() {
     let mut state = state();
     let ids = add_outline(&mut state, "A\nB\nC\nD");

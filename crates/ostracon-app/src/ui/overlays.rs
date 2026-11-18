@@ -11,11 +11,11 @@ use jiff::ZonedDateTime;
 use ostracon_core::backup::Backup;
 use ostracon_core::{ProjectColor, TaskId};
 
-use super::actions::{Confirm, Escape};
+use super::actions::{Confirm, Escape, NewSubtask};
 use super::theme::{self, Palette, TASK_TEXT};
 use super::workspace::{OverviewPicker, Panel, Workspace};
 use crate::format;
-use crate::state::{Dialog, Undo};
+use crate::state::{Composer, Dialog, Undo};
 
 /// The backdrop's padding above a modal card.
 const MODAL_TOP: f32 = 72.;
@@ -140,6 +140,10 @@ impl Workspace {
         };
         let id = task.id;
         let completed = task.is_completed();
+        let subtask_composer = self
+            .composer
+            .clone()
+            .filter(|_| self.state.composer == Composer::AddingInOverview { parent: id });
 
         let entity = cx.entity();
         let projects = self.state.projects().to_vec();
@@ -159,6 +163,32 @@ impl Workspace {
         // start at the same inset.
         let text_inset = px(theme::CHECKBOX + OVERVIEW_CHECK_GAP + OVERVIEW_INPUT_PAD);
         let open_subtasks = subtasks.iter().filter(|t| !t.is_completed()).count();
+        let add_subtask = match subtask_composer {
+            // The full composer, as for adding a task in the list.
+            Some(composer) => div()
+                .ml(text_inset - px(4.))
+                .py_2()
+                .child(composer)
+                .into_any_element(),
+            None => div()
+                .id("overview-add-subtask")
+                .flex()
+                .items_center()
+                .gap_2p5()
+                .ml(text_inset)
+                .py_2()
+                .cursor_pointer()
+                .text_size(px(14.))
+                .text_color(palette.muted)
+                .hover(|d| d.text_color(palette.accent))
+                .child(Icon::new(Lucide::Plus).small().text_color(palette.accent))
+                .child("Add sub-task")
+                .on_click(
+                    cx.listener(|this, _, window, cx| this.new_subtask(&NewSubtask, window, cx)),
+                )
+                .test_support()
+                .into_any_element(),
+        };
         let main = div()
             .id("overview-main")
             .flex()
@@ -281,21 +311,7 @@ impl Workspace {
                         this.act(window, cx, |s| s.open_overview(sid));
                     }))
             }))
-            .child(
-                div()
-                    .ml(text_inset - px(OVERVIEW_INPUT_PAD))
-                    .pb_3()
-                    .border_b_1()
-                    .border_color(palette.hairline)
-                    .child(
-                        Input::new(&overview.subtask)
-                            .appearance(false)
-                            .text_size(px(14.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .h(px(28.))
-                            .prefix(Icon::new(Lucide::Plus).small().text_color(palette.muted)),
-                    ),
-            );
+            .child(add_subtask);
 
         let side_label = |label: &'static str| {
             div()

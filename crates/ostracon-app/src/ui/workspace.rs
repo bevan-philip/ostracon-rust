@@ -45,7 +45,6 @@ pub struct OverviewInputs {
     pub task: TaskId,
     pub name: Entity<QuickAddInput>,
     pub description: Entity<TextareaState>,
-    pub subtask: Entity<InputState>,
     pub picker: OverviewPicker,
     pub _subscriptions: Vec<Subscription>,
 }
@@ -207,11 +206,12 @@ impl Workspace {
         self.composer = None;
         let seed = match wanted {
             Composer::Closed => return,
-            Composer::Adding { parent } => ComposerSeed {
+            Composer::Adding { .. } | Composer::AddingInOverview { .. } => ComposerSeed {
                 mode: wanted,
                 draft: Draft::new(),
                 description: String::new(),
-                project: parent
+                project: wanted
+                    .parent()
                     .and_then(|p| self.state.task(p))
                     .map_or(self.state.project, |t| t.project_id),
                 due: None,
@@ -241,6 +241,10 @@ impl Workspace {
                 ComposerEvent::Submit => this.submit_composer(composer.clone(), window, cx),
                 ComposerEvent::Cancel => {
                     this.state.close_composer();
+                    if this.state.overview.is_some() {
+                        // Focus was in the composer; the overview takes it back for Esc and the arrows.
+                        window.focus(&this.modal_focus, cx);
+                    }
                     this.sync(window, cx);
                 }
             },
@@ -265,7 +269,10 @@ impl Workspace {
                 c.reminders().to_vec(),
             )
         };
-        let adding = matches!(self.state.composer, Composer::Adding { .. });
+        let adding = matches!(
+            self.state.composer,
+            Composer::Adding { .. } | Composer::AddingInOverview { .. }
+        );
         if self
             .state
             .submit_composer(&draft, &description, project, due, &reminders)
@@ -309,7 +316,6 @@ impl Workspace {
                 .placeholder("Description")
                 .default_value(task.description.clone())
         });
-        let subtask = cx.new(|cx| InputState::new(window, cx).placeholder("Add sub-task"));
         let id = task.id;
         let subscriptions = vec![
             cx.subscribe_in(
@@ -329,22 +335,12 @@ impl Workspace {
                     this.save_overview(id, window, cx);
                 }
             }),
-            cx.subscribe_in(&subtask, window, move |this, input, event, window, cx| {
-                if let InputEvent::PressEnter { .. } = event {
-                    let text = input.read(cx).value().to_string();
-                    if this.state.add_subtask(id, &text) {
-                        input.update(cx, |i, cx| i.set_value("", window, cx));
-                    }
-                    this.sync(window, cx);
-                }
-            }),
         ];
         window.focus(&self.modal_focus, cx);
         self.overview = Some(OverviewInputs {
             task: id,
             name,
             description,
-            subtask,
             picker: OverviewPicker::Closed,
             _subscriptions: subscriptions,
         });
@@ -552,9 +548,14 @@ impl Workspace {
         self.act(window, cx, AppState::start_adding);
     }
 
-    fn new_subtask(&mut self, _: &NewSubtask, window: &mut Window, cx: &mut Context<Self>) {
-        let parent = self.state.overview.or(self.state.selection.anchor());
-        self.act(window, cx, |s| s.start_adding_subtask(parent));
+    /// Adds a subtask in the overview while it is open, otherwise to the selected task in the list.
+    pub fn new_subtask(&mut self, _: &NewSubtask, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(open) = self.state.overview {
+            self.save_overview(open, window, cx);
+            self.act(window, cx, AppState::start_adding_subtask_in_overview);
+        } else {
+            self.act(window, cx, |s| s.start_adding_subtask(None));
+        }
     }
 
     fn new_project(&mut self, _: &NewProject, window: &mut Window, cx: &mut Context<Self>) {

@@ -277,6 +277,43 @@ fn escape_closes_an_overview_picker_then_the_overview(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn the_overview_adds_subtasks_with_the_full_composer(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let (workspace, cx) = open(cx, |repo| {
+        repo.add_task(NewTask {
+            name: "A".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    });
+    cx.simulate_keystrokes("j cmd-o");
+    cx.run_until_parked();
+    cx.update(|window, cx| window.click("overview-add-subtask", cx));
+    cx.run_until_parked();
+    assert!(matches!(
+        workspace.read_with(cx, |w, _| w.state.composer),
+        Composer::AddingInOverview { .. }
+    ));
+
+    cx.simulate_input("B tomorrow ");
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["A", "  B"]);
+    assert!(workspace.read_with(cx, |w, _| w.state.rows()[1].task.due.is_some()));
+
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(
+        workspace.read_with(cx, |w, _| (w.state.composer, w.state.overview.is_some())),
+        (Composer::Closed, true),
+        "the first Esc closes only the composer"
+    );
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(workspace.read_with(cx, |w, _| w.state.overview), None);
+}
+
+#[gpui_kit::test]
 fn deleting_from_the_overview(cx: &mut TestAppContext) {
     use gpui_kit::test::TestWindowExt as _;
     let (workspace, cx) = open(cx, |repo| {
