@@ -192,7 +192,12 @@ impl Render for DatePicker {
                     .on_click(cx.listener(|this, _, _, cx| this.choose(None, cx))),
             )
             .child(div().h(px(1.)).my_1().bg(palette.hairline))
-            .child(Calendar::new(&self.calendar).small())
+            // Weeks start on Monday, as Todoist's default and "next week" have it.
+            .child(
+                Calendar::new(&self.calendar)
+                    .small()
+                    .first_day_of_week(chrono::Weekday::Mon),
+            )
             .child(
                 div()
                     .flex()
