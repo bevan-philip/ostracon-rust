@@ -4,5 +4,6 @@
 pub mod dates;
 pub mod locale;
 pub mod model;
+pub mod quickadd;
 
 pub use model::{Due, Project, ProjectColor, ProjectId, Reminder, Task, TaskId};

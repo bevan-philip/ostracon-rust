@@ -246,25 +246,24 @@ impl DateParser {
         if token.is_reminder {
             return None;
         }
-        if token.word == "on" {
-            if let Some(m) = self
+        if token.word == "on"
+            && let Some(m) = self
                 .phrase_at(tokens, index + 1)
                 .filter(|m| m.value.day.is_some())
-            {
-                return found(m.length + 1, m.value);
-            }
+        {
+            return found(m.length + 1, m.value);
         }
         if let Some(date) = self.date_at(tokens, index) {
-            if date.value.time.is_none() {
-                if let Some(time) = time_at(tokens, index + date.length) {
-                    return found(
-                        date.length + time.length,
-                        DateFragment {
-                            day: date.value.day,
-                            time: Some(time.value),
-                        },
-                    );
-                }
+            if date.value.time.is_none()
+                && let Some(time) = time_at(tokens, index + date.length)
+            {
+                return found(
+                    date.length + time.length,
+                    DateFragment {
+                        day: date.value.day,
+                        time: Some(time.value),
+                    },
+                );
             }
             return Some(date);
         }
@@ -336,37 +335,37 @@ impl DateParser {
             return day(1, Some(self.next_weekday(weekday, false)));
         }
 
-        if first == "this" {
-            if let Some(second) = word(1) {
-                if second == "weekend" {
-                    return day(2, Some(self.this_weekend()));
-                }
-                if let Some(weekday) = weekday(second) {
-                    return day(2, Some(self.next_weekday(weekday, true)));
-                }
+        if first == "this"
+            && let Some(second) = word(1)
+        {
+            if second == "weekend" {
+                return day(2, Some(self.this_weekend()));
+            }
+            if let Some(weekday) = weekday(second) {
+                return day(2, Some(self.next_weekday(weekday, true)));
             }
         }
 
-        if first == "next" {
-            if let Some(second) = word(1) {
-                let monday = self.next_weekday(Weekday::Monday, false);
-                match second {
-                    "week" => return day(2, Some(monday)),
-                    "weekend" => return day(2, monday.checked_add(Span::new().days(5)).ok()),
-                    "month" => {
-                        return day(
-                            2,
-                            today
-                                .first_of_month()
-                                .checked_add(Span::new().months(1))
-                                .ok(),
-                        );
-                    }
-                    _ => {
-                        if let Some(weekday) = weekday(second) {
-                            let offset = i64::from(weekday.to_monday_zero_offset());
-                            return day(2, monday.checked_add(Span::new().days(offset)).ok());
-                        }
+        if first == "next"
+            && let Some(second) = word(1)
+        {
+            let monday = self.next_weekday(Weekday::Monday, false);
+            match second {
+                "week" => return day(2, Some(monday)),
+                "weekend" => return day(2, monday.checked_add(Span::new().days(5)).ok()),
+                "month" => {
+                    return day(
+                        2,
+                        today
+                            .first_of_month()
+                            .checked_add(Span::new().months(1))
+                            .ok(),
+                    );
+                }
+                _ => {
+                    if let Some(weekday) = weekday(second) {
+                        let offset = i64::from(weekday.to_monday_zero_offset());
+                        return day(2, monday.checked_add(Span::new().days(offset)).ok());
                     }
                 }
             }
@@ -381,22 +380,22 @@ impl DateParser {
             }
         }
 
-        if first == "in" {
-            if let Some(amount_word) = word(1) {
-                let amount = amount_word
-                    .parse::<i64>()
-                    .ok()
-                    .or_else(|| ["a", "an", "one"].contains(&amount_word).then_some(1));
-                if let (Some(amount), Some(unit)) = (amount, word(2).and_then(duration_unit)) {
-                    return self
-                        .offset(amount, unit)
-                        .map(|value| Match { length: 3, value });
-                }
-                if let Some((amount, unit)) = compact_duration(amount_word) {
-                    return self
-                        .offset(amount, unit)
-                        .map(|value| Match { length: 2, value });
-                }
+        if first == "in"
+            && let Some(amount_word) = word(1)
+        {
+            let amount = amount_word
+                .parse::<i64>()
+                .ok()
+                .or_else(|| ["a", "an", "one"].contains(&amount_word).then_some(1));
+            if let (Some(amount), Some(unit)) = (amount, word(2).and_then(duration_unit)) {
+                return self
+                    .offset(amount, unit)
+                    .map(|value| Match { length: 3, value });
+            }
+            if let Some((amount, unit)) = compact_duration(amount_word) {
+                return self
+                    .offset(amount, unit)
+                    .map(|value| Match { length: 2, value });
             }
         }
 
@@ -572,14 +571,13 @@ fn time_at(tokens: &[Token], index: usize) -> Option<Match<Time>> {
     }
     let mut meridiem = c.get(3).map(|m| m.as_str().to_owned());
     let mut length = consumed;
-    if meridiem.is_none() {
-        if let Some(next) = tokens
+    if meridiem.is_none()
+        && let Some(next) = tokens
             .get(position + 1)
             .filter(|t| !t.is_reminder && (t.word == "am" || t.word == "pm"))
-        {
-            meridiem = Some(next.word.clone());
-            length += 1;
-        }
+    {
+        meridiem = Some(next.word.clone());
+        length += 1;
     }
     if let Some(meridiem) = meridiem {
         if !(1..=12).contains(&hour) {
