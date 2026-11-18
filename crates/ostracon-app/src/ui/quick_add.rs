@@ -112,6 +112,8 @@ pub struct QuickAddInput {
     dismissed_query: Option<usize>,
     /// Whether recognised words become blocks. Off for fields like a subtask name.
     recognise: bool,
+    text_size: Pixels,
+    line_height: Pixels,
     scroll_x: Pixels,
     last_layout: Option<ShapedLine>,
     last_bounds: Option<Bounds<Pixels>>,
@@ -138,11 +140,20 @@ impl QuickAddInput {
             autocomplete: None,
             dismissed_query: None,
             recognise: true,
+            text_size: px(TASK_TEXT),
+            line_height: px(24.),
             scroll_x: px(0.),
             last_layout: None,
             last_bounds: None,
             selecting: false,
         }
+    }
+
+    /// Text bigger or smaller than a task's in the list, such as the overview's title.
+    pub fn with_text_size(mut self, size: Pixels, line_height: Pixels) -> Self {
+        self.text_size = size;
+        self.line_height = line_height;
+        self
     }
 
     pub fn draft(&self) -> &Draft {
@@ -782,8 +793,8 @@ impl Render for QuickAddInput {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
-            .text_size(px(TASK_TEXT))
-            .line_height(px(24.))
+            .text_size(self.text_size)
+            .line_height(self.line_height)
             .child(TextElement { input: cx.entity() })
     }
 }

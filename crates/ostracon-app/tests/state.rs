@@ -111,6 +111,42 @@ fn editing_never_rereads_the_name() {
 }
 
 #[test]
+fn the_overview_name_reads_what_is_typed_into_it() {
+    let mut state = state();
+    let work = state
+        .repository()
+        .create_project("Work", ProjectColor::Red)
+        .unwrap();
+    state.reload();
+    let ids = add_outline(&mut state, "Plan monday standup\nB");
+    state.open_overview(ids[0]);
+
+    // The name loads as literal, so saving it as it is changes nothing.
+    let mut draft = Draft::from_text("Plan monday standup", true);
+    assert!(state.save_overview(ids[0], &draft, ""));
+    assert_eq!(state.task(ids[0]).unwrap().due, None);
+
+    let end = draft.len();
+    draft.edit(end..end, " tomorrow #Work");
+    assert!(state.save_overview(ids[0], &draft, "Notes"));
+    let task = state.task(ids[0]).unwrap();
+    assert_eq!(
+        (task.name.as_str(), task.description.as_str()),
+        ("Plan monday standup", "Notes")
+    );
+    assert_eq!(task.due, Some(Due::day(date(2026, 1, 15))));
+    assert_eq!(task.project_id, work.id);
+    assert_eq!(state.overview, Some(ids[0]));
+    assert_eq!(shown(&state), ["Plan monday standup", "B"]);
+
+    // A name that is only a project keeps the old name.
+    assert!(state.save_overview(ids[0], &typed("#Inbox "), "Notes"));
+    let task = state.task(ids[0]).unwrap();
+    assert_eq!(task.name, "Plan monday standup");
+    assert_eq!(task.project_id, state.project);
+}
+
+#[test]
 fn subtask_composer_sits_after_the_parents_subtasks() {
     let mut state = state();
     let ids = add_outline(&mut state, "A\n B\nC");

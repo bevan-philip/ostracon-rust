@@ -640,14 +640,43 @@ impl AppState {
             .map(TaskRow::id)
     }
 
-    /// Saves a name and description. An empty name keeps the old one.
-    pub fn save_task(&mut self, id: TaskId, name: &str, description: &str) {
-        let (name, description) = (name.trim(), description.trim());
-        let Some(task) = self.task(id) else { return };
-        if name.is_empty() || (name == task.name && description == task.description) {
-            return;
+    /// Saves the overview's name and description. As in the composer, a project, date or reminder written in
+    /// the name is set and taken out of it: a project moves the task (keeping it in the list), a date replaces
+    /// the due date and reminders add to the task's. An empty name keeps the old one. Returns whether it saved.
+    pub fn save_overview(&mut self, id: TaskId, name: &Draft, description: &str) -> bool {
+        let parsed = self.composer_result(name);
+        let Some(task) = self.task(id).cloned() else {
+            return false;
+        };
+        let name = Some(parsed.name.as_str())
+            .filter(|n| !n.is_empty())
+            .unwrap_or(&task.name);
+        let description = description.trim();
+        let mut reminders = task.reminders.clone();
+        reminders.extend(parsed.reminders.iter().copied());
+        let text_changed = name != task.name || description != task.description;
+        let due_changed = parsed.due.is_some_and(|due| task.due != Some(due));
+        let reminders_changed = !parsed.reminders.is_empty();
+        if (text_changed || due_changed || reminders_changed)
+            && !self.perform(|repo| {
+                if text_changed {
+                    repo.update_task(id, name, description)?;
+                }
+                if due_changed {
+                    repo.set_due(id, parsed.due)?;
+                }
+                if reminders_changed {
+                    repo.set_reminders(id, &reminders)?;
+                }
+                Ok(())
+            })
+        {
+            return false;
         }
-        self.perform(|repo| repo.update_task(id, name, description));
+        match parsed.project_id.filter(|&p| p != task.project_id) {
+            Some(project) => self.move_task_to(id, project),
+            None => true,
+        }
     }
 
     /// Reschedules this one task, unlike [`AppState::set_due`], which acts on the selection it belongs to.
@@ -660,8 +689,8 @@ impl AppState {
     }
 
     /// Moves the overview's task. It keeps its place in the list until the overview closes.
-    pub fn move_task_to(&mut self, id: TaskId, project: ProjectId) {
-        self.move_tasks(&[id], project, self.overview.is_some());
+    pub fn move_task_to(&mut self, id: TaskId, project: ProjectId) -> bool {
+        self.move_tasks(&[id], project, self.overview.is_some())
     }
 
     pub fn add_subtask(&mut self, parent: TaskId, name: &str) -> bool {

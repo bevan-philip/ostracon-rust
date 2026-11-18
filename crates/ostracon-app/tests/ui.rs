@@ -303,3 +303,60 @@ fn deleting_from_the_overview(cx: &mut TestAppContext) {
     assert_eq!(names(&workspace, cx), ["B"]);
     assert_eq!(workspace.read_with(cx, |w, _| w.state.overview), None);
 }
+
+#[gpui_kit::test]
+fn the_overview_name_reads_a_project_typed_into_it(cx: &mut TestAppContext) {
+    use gpui_kit::Focusable as _;
+    let (workspace, cx) = open(cx, |repo| {
+        repo.create_project("Garden", ProjectColor::Green).unwrap();
+        for name in ["A", "B"] {
+            repo.add_task(NewTask {
+                name: name.into(),
+                ..Default::default()
+            })
+            .unwrap();
+        }
+    });
+    cx.simulate_keystrokes("j cmd-o");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        let name = workspace.read(cx).overview.as_ref().unwrap().name.clone();
+        window.focus(&name.focus_handle(cx), cx);
+    });
+    cx.simulate_keystrokes("end");
+    cx.simulate_input(" two #Garden ");
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    let (task, garden) = workspace.read_with(cx, |w, _| {
+        let task = w.state.task(w.state.overview.unwrap()).unwrap().clone();
+        let garden = w
+            .state
+            .projects()
+            .iter()
+            .find(|p| p.name == "Garden")
+            .unwrap()
+            .id;
+        (task, garden)
+    });
+    assert_eq!(task.name, "A two");
+    assert_eq!(task.project_id, garden);
+    assert_eq!(
+        names(&workspace, cx),
+        ["A two", "B"],
+        "it stays in the list"
+    );
+    let shown = workspace.read_with(cx, |w, cx| {
+        w.overview
+            .as_ref()
+            .unwrap()
+            .name
+            .read(cx)
+            .draft()
+            .plain_text()
+    });
+    assert_eq!(shown, "A two", "the project leaves the name");
+
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["B"]);
+}

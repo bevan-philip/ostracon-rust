@@ -130,6 +130,9 @@ impl Workspace {
             names
         };
         let subtasks: Vec<_> = self.state.subtasks(task.id).into_iter().cloned().collect();
+        let suggestions = overview
+            .name
+            .update(cx, |name, cx| name.render_suggestions(palette, cx));
         let (date_picker, reminder_editor) = match &overview.picker {
             OverviewPicker::Closed => (None, None),
             OverviewPicker::Date(p) => (Some(p.clone().into_any_element()), None),
@@ -189,15 +192,15 @@ impl Workspace {
                             })),
                     )
                     .child(
-                        div().flex_1().min_w_0().child(
-                            Input::new(&overview.name)
-                                .appearance(false)
-                                .text_size(px(20.))
-                                .font_weight(FontWeight::BOLD)
-                                .line_height(px(28.))
-                                .h(px(28.))
-                                .px(px(OVERVIEW_INPUT_PAD)),
-                        ),
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .px(px(OVERVIEW_INPUT_PAD))
+                            .font_weight(FontWeight::BOLD)
+                            .child(overview.name.clone())
+                            .when_some(suggestions, |d, s| {
+                                d.child(deferred(anchored().child(s)).with_priority(2))
+                            }),
                     ),
             )
             .child(
@@ -349,7 +352,9 @@ impl Workspace {
                 menu = menu.item(PopupMenuItem::new(p.name.clone()).on_click(
                     move |_, window, cx| {
                         entity.update(cx, |this, cx| {
-                            this.act(window, cx, |s| s.move_task_to(id, pid))
+                            this.act(window, cx, |s| {
+                                s.move_task_to(id, pid);
+                            })
                         });
                     },
                 ));

@@ -12,6 +12,7 @@ use ostracon_core::{ProjectColor, TaskId};
 use super::actions::*;
 use super::composer::{ComposerEvent, ComposerSeed, ComposerView};
 use super::pickers::{DatePicker, PickerEvent, ReminderEditor};
+use super::quick_add::{QuickAddEvent, QuickAddInput};
 use crate::platform::{NotificationResponse, Notifier, Permission};
 use crate::state::{AppState, Composer, Dialog};
 
@@ -42,7 +43,7 @@ impl Render for DraggedTasks {
 /// The open task overview's fields.
 pub struct OverviewInputs {
     pub task: TaskId,
-    pub name: Entity<InputState>,
+    pub name: Entity<QuickAddInput>,
     pub description: Entity<TextareaState>,
     pub subtask: Entity<InputState>,
     pub picker: OverviewPicker,
@@ -281,14 +282,30 @@ impl Workspace {
 
     fn sync_overview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let wanted = self.state.overview;
-        if self.overview.as_ref().map(|o| o.task) == wanted {
+        if let Some(overview) = &self.overview
+            && Some(overview.task) == wanted
+        {
+            let projects = self.state.projects().to_vec();
+            overview
+                .name
+                .update(cx, |name, _| name.set_projects(projects));
             return;
         }
         self.overview = None;
         let Some(task) = wanted.and_then(|id| self.state.task(id)).cloned() else {
             return;
         };
-        let name = cx.new(|cx| InputState::new(window, cx).default_value(task.name.clone()));
+        // An existing name is literal: only what is typed into it is read for projects and dates.
+        let projects = self.state.projects().to_vec();
+        let name = cx.new(|cx| {
+            QuickAddInput::new(
+                Draft::from_text(&task.name, true),
+                projects,
+                "Task name",
+                cx,
+            )
+            .with_text_size(px(20.), px(28.))
+        });
         let description = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .auto_grow(1, 12)
@@ -302,12 +319,14 @@ impl Workspace {
                 &name,
                 window,
                 move |this, _, event, window, cx| match event {
-                    InputEvent::Blur | InputEvent::PressEnter { .. } => {
-                        this.save_overview(id, window, cx)
-                    }
-                    _ => {}
+                    QuickAddEvent::Submit => this.save_overview(id, window, cx),
+                    QuickAddEvent::Cancel => this.escape(&Escape, window, cx),
+                    QuickAddEvent::Changed => cx.notify(),
                 },
             ),
+            cx.on_blur(&name.focus_handle(cx), window, move |this, window, cx| {
+                this.save_overview(id, window, cx)
+            }),
             cx.subscribe_in(&description, window, move |this, _, event, window, cx| {
                 if let InputEvent::Blur = event {
                     this.save_overview(id, window, cx);
@@ -338,9 +357,16 @@ impl Workspace {
         let Some(overview) = self.overview.as_ref().filter(|o| o.task == id) else {
             return;
         };
-        let name = overview.name.read(cx).value().to_string();
+        let name = overview.name.read(cx).draft().clone();
         let description = overview.description.read(cx).value().to_string();
-        self.state.save_task(id, &name, &description);
+        let input = overview.name.clone();
+        if self.state.save_overview(id, &name, &description) && !name.blocks().is_empty() {
+            // What the blocks said is set now, so they leave the name.
+            if let Some(task) = self.state.task(id) {
+                let draft = Draft::from_text(&task.name, true);
+                input.update(cx, |input, cx| input.set_draft(draft, cx));
+            }
+        }
         self.sync(window, cx);
     }
 
