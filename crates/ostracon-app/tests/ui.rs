@@ -1,0 +1,184 @@
+//! Headless GPUI tests: the real Workspace in a test window, driven with keystrokes.
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use gpui_kit::component::Root;
+use gpui_kit::{AppContext as _, Entity, TestAppContext, VisualTestContext};
+use ostracon_app::state::{AppState, Composer, Dialog};
+use ostracon_app::ui::{actions, workspace::Workspace};
+use ostracon_core::{NewTask, ProjectColor, Repository};
+
+fn open(
+    cx: &mut TestAppContext,
+    seed: impl FnOnce(&Repository),
+) -> (Entity<Workspace>, &mut VisualTestContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        actions::bind_keys(cx);
+    });
+    let repo = Repository::in_memory().unwrap();
+    seed(&repo);
+    let state = AppState::new(repo, None);
+    let slot: Rc<RefCell<Option<Entity<Workspace>>>> = Rc::default();
+    let captured = slot.clone();
+    let (_root, cx) = cx.add_window_view(move |window, cx| {
+        let workspace = cx.new(|cx| Workspace::new(state, None, window, cx));
+        *captured.borrow_mut() = Some(workspace.clone());
+        Root::new(workspace, window, cx)
+    });
+    cx.run_until_parked();
+    let workspace = slot.borrow().clone().unwrap();
+    (workspace, cx)
+}
+
+fn names(workspace: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String> {
+    workspace.read_with(cx, |w, _| {
+        w.state
+            .rows()
+            .iter()
+            .map(|r| format!("{}{}", "  ".repeat(r.depth), r.task.name))
+            .collect()
+    })
+}
+
+#[gpui_kit::test]
+fn quick_add_from_the_keyboard(cx: &mut TestAppContext) {
+    let (workspace, cx) = open(cx, |repo| {
+        repo.create_project("Home Admin", ProjectColor::Green)
+            .unwrap();
+    });
+    cx.simulate_keystrokes("a");
+    cx.run_until_parked();
+    assert_eq!(
+        workspace.read_with(cx, |w, _| w.state.composer),
+        Composer::Adding { parent: None }
+    );
+
+    cx.simulate_input("Pay rent tomorrow 9am !1h ");
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    let task = workspace.read_with(cx, |w, _| w.state.rows()[0].task.clone());
+    assert_eq!(task.name, "Pay rent");
+    assert!(task.due.is_some_and(|d| d.has_time()));
+    assert_eq!(task.reminders.len(), 1);
+    assert_eq!(
+        workspace.read_with(cx, |w, _| w.state.composer),
+        Composer::Adding { parent: None },
+        "Return leaves a fresh composer open"
+    );
+
+    // #project autocomplete: type a partial name, accept with Tab.
+    cx.simulate_input("Fix boiler #hom");
+    cx.simulate_keystrokes("tab enter");
+    cx.run_until_parked();
+    let toast = workspace.read_with(cx, |w, _| w.state.toast.as_ref().map(|t| t.message.clone()));
+    assert_eq!(toast.as_deref(), Some("Task added to Home Admin"));
+
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(
+        workspace.read_with(cx, |w, _| w.state.composer),
+        Composer::Closed
+    );
+}
+
+#[gpui_kit::test]
+fn backspace_over_a_block_keeps_the_word(cx: &mut TestAppContext) {
+    let (workspace, cx) = open(cx, |_| {});
+    cx.simulate_keystrokes("a");
+    cx.simulate_input("Plan monday ");
+    // Delete the space, then backspace over the "monday" block: it becomes plain text.
+    cx.simulate_keystrokes("backspace backspace");
+    cx.simulate_input("'s standup");
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    let task = workspace.read_with(cx, |w, _| w.state.rows()[0].task.clone());
+    assert_eq!(task.name, "Plan monday's standup");
+    assert_eq!(task.due, None);
+}
+
+#[gpui_kit::test]
+fn list_keyboard_flow(cx: &mut TestAppContext) {
+    let (workspace, cx) = open(cx, |repo| {
+        for name in ["A", "B", "C"] {
+            repo.add_task(NewTask {
+                name: name.into(),
+                ..Default::default()
+            })
+            .unwrap();
+        }
+    });
+    cx.simulate_keystrokes("j j tab");
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["A", "  B", "C"]);
+    cx.simulate_keystrokes("shift-tab k alt-cmd-down");
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["B", "A", "C"]);
+    cx.simulate_keystrokes("space");
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["B", "C"]);
+    cx.simulate_keystrokes("cmd-z");
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["B", "A", "C"]);
+    cx.simulate_keystrokes("backspace");
+    cx.run_until_parked();
+    assert!(matches!(
+        workspace.read_with(cx, |w, _| w.state.dialog.clone()),
+        Dialog::ConfirmDeleteTasks(_)
+    ));
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert_eq!(
+        names(&workspace, cx),
+        ["B", "A"],
+        "after undo the selection stayed on C"
+    );
+}
+
+#[gpui_kit::test]
+fn typing_in_the_composer_never_triggers_list_shortcuts(cx: &mut TestAppContext) {
+    let (workspace, cx) = open(cx, |_| {});
+    cx.simulate_keystrokes("a");
+    cx.simulate_input("aqjk");
+    cx.simulate_keystrokes("space enter");
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["aqjk"]);
+}
+
+#[gpui_kit::test]
+fn editing_in_place_and_the_overview(cx: &mut TestAppContext) {
+    let (workspace, cx) = open(cx, |repo| {
+        repo.add_task(NewTask {
+            name: "Review friday notes".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    });
+    cx.simulate_keystrokes("j enter");
+    cx.run_until_parked();
+    assert!(matches!(
+        workspace.read_with(cx, |w, _| w.state.composer),
+        Composer::Editing { .. }
+    ));
+    cx.simulate_keystrokes("end");
+    cx.simulate_input(" v2");
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    let task = workspace.read_with(cx, |w, _| w.state.rows()[0].task.clone());
+    assert_eq!(
+        task.name, "Review friday notes v2",
+        "an existing name is never re-read"
+    );
+    assert_eq!(task.due, None);
+
+    cx.simulate_keystrokes("cmd-o");
+    cx.run_until_parked();
+    assert_eq!(
+        workspace.read_with(cx, |w, _| w.state.overview),
+        Some(task.id)
+    );
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(workspace.read_with(cx, |w, _| w.state.overview), None);
+}

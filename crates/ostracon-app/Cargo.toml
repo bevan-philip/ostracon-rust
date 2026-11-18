@@ -48,3 +48,7 @@ objc2-user-notifications = { version = "0.3.2", features = [
     "UNNotificationTrigger",
     "UNUserNotificationCenter",
 ] }
+
+[[test]]
+name = "ui"
+path = "tests/ui.rs"

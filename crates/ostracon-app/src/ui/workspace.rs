@@ -190,7 +190,7 @@ impl Workspace {
             || self.state.dialog != Dialog::None
             || self.panel != Panel::None;
         let composing = self.composer.is_some();
-        if !modal && !composing && !self.list_focus.contains_focused(window, cx) {
+        if !modal && !composing && !self.list_focus.is_focused(window) {
             window.focus(&self.list_focus, cx);
         }
         cx.notify();

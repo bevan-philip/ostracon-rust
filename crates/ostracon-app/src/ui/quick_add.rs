@@ -494,13 +494,13 @@ impl QuickAddInput {
 
     // UTF-16 conversion for the platform's input handler.
 
-    fn to_utf16(&self, offset: usize) -> usize {
+    fn utf16_offset(&self, offset: usize) -> usize {
         self.text()[..offset.min(self.draft.len())]
             .encode_utf16()
             .count()
     }
 
-    fn from_utf16(&self, offset: usize) -> usize {
+    fn utf8_offset(&self, offset: usize) -> usize {
         let text = self.text();
         let mut utf16 = 0;
         for (index, c) in text.char_indices() {
@@ -512,12 +512,12 @@ impl QuickAddInput {
         text.len()
     }
 
-    fn range_from_utf16(&self, range: &Range<usize>) -> Range<usize> {
-        self.from_utf16(range.start)..self.from_utf16(range.end)
+    fn utf8_range(&self, range: &Range<usize>) -> Range<usize> {
+        self.utf8_offset(range.start)..self.utf8_offset(range.end)
     }
 
-    fn range_to_utf16(&self, range: &Range<usize>) -> Range<usize> {
-        self.to_utf16(range.start)..self.to_utf16(range.end)
+    fn utf16_range(&self, range: &Range<usize>) -> Range<usize> {
+        self.utf16_offset(range.start)..self.utf16_offset(range.end)
     }
 
     /// The suggestion list, drawn under the field by the composer.
@@ -632,8 +632,8 @@ impl EntityInputHandler for QuickAddInput {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<String> {
-        let range = self.range_from_utf16(&range);
-        actual.replace(self.range_to_utf16(&range));
+        let range = self.utf8_range(&range);
+        actual.replace(self.utf16_range(&range));
         Some(self.text()[range].to_string())
     }
 
@@ -644,7 +644,7 @@ impl EntityInputHandler for QuickAddInput {
         _: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
         Some(UTF16Selection {
-            range: self.range_to_utf16(&self.selection),
+            range: self.utf16_range(&self.selection),
             reversed: self.reversed,
         })
     }
@@ -655,17 +655,17 @@ impl EntityInputHandler for QuickAddInput {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.selection = self.range_from_utf16(&range);
+        self.selection = self.utf8_range(&range);
         self.reversed = false;
         cx.notify();
     }
 
     fn text_length_utf16(&mut self, _: &mut Window, _: &mut Context<Self>) -> Option<usize> {
-        Some(self.to_utf16(self.draft.len()))
+        Some(self.utf16_offset(self.draft.len()))
     }
 
     fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        self.marked.as_ref().map(|range| self.range_to_utf16(range))
+        self.marked.as_ref().map(|range| self.utf16_range(range))
     }
 
     fn unmark_text(&mut self, _: &mut Window, cx: &mut Context<Self>) {
@@ -681,7 +681,7 @@ impl EntityInputHandler for QuickAddInput {
         cx: &mut Context<Self>,
     ) {
         let range = range
-            .map(|r| self.range_from_utf16(&r))
+            .map(|r| self.utf8_range(&r))
             .or(self.marked.clone())
             .unwrap_or(self.selection.clone());
         self.marked = None;
@@ -697,15 +697,15 @@ impl EntityInputHandler for QuickAddInput {
         cx: &mut Context<Self>,
     ) {
         let range = range
-            .map(|r| self.range_from_utf16(&r))
+            .map(|r| self.utf8_range(&r))
             .or(self.marked.clone())
             .unwrap_or(self.selection.clone());
         // Text being composed (IME) is held as plain text and not recognised until it is committed.
         self.draft.edit(range.clone(), text);
         self.marked = (!text.is_empty()).then(|| range.start..range.start + text.len());
-        let start16 = self.to_utf16(range.start);
+        let start16 = self.utf16_offset(range.start);
         self.selection = match selected {
-            Some(sel) => self.from_utf16(start16 + sel.start)..self.from_utf16(start16 + sel.end),
+            Some(sel) => self.utf8_offset(start16 + sel.start)..self.utf8_offset(start16 + sel.end),
             None => range.start + text.len()..range.start + text.len(),
         };
         self.reversed = false;
@@ -720,7 +720,7 @@ impl EntityInputHandler for QuickAddInput {
         _: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
         let layout = self.last_layout.as_ref()?;
-        let range = self.range_from_utf16(&range);
+        let range = self.utf8_range(&range);
         Some(Bounds::from_corners(
             point(
                 bounds.left() + layout.x_for_index(range.start) - self.scroll_x,
@@ -742,7 +742,7 @@ impl EntityInputHandler for QuickAddInput {
         let bounds = self.last_bounds?;
         let layout = self.last_layout.as_ref()?;
         let local = bounds.localize(&point)?;
-        Some(self.to_utf16(layout.closest_index_for_x(local.x + self.scroll_x)))
+        Some(self.utf16_offset(layout.closest_index_for_x(local.x + self.scroll_x)))
     }
 }
 
