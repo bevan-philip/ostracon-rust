@@ -1,6 +1,6 @@
 //! Todoist-style natural-language dates and `!reminders` in task text.
 //!
-//! Due dates: `today`, `tomorrow`, `tonight`, `friday`, `this friday`, `next friday`, `next week`, `weekend`,
+//! Due dates: `today`, `tomorrow`, `yesterday`, `tonight`, `friday`, `this friday`, `next friday`, `next week`, `weekend`,
 //! `next month`, `end of month`, `in 3 days`, `in 2 hours`, `jan 27`, `27th january 2027`, `27/1`,
 //! `2027-01-27`, each optionally with a time such as `at 5pm`, `17:30`, `9:15am` or `noon`. A time on its own
 //! means the next time the clock reads it.
@@ -317,6 +317,7 @@ impl DateParser {
         match first {
             "today" => return day(1, Some(today)),
             "tomorrow" | "tmr" | "tmrw" => return day(1, today.tomorrow().ok()),
+            "yesterday" => return day(1, today.yesterday().ok()),
             "tonight" => {
                 return found(
                     1,
@@ -748,6 +749,7 @@ mod tests {
         assert_eq!(due("today"), day(2026, 1, 14));
         assert_eq!(due("tomorrow"), day(2026, 1, 15));
         assert_eq!(due("tmrw"), day(2026, 1, 15));
+        assert_eq!(due("yesterday"), day(2026, 1, 13));
         assert_eq!(due("tonight"), at(2026, 1, 14, 19, 0));
         assert_eq!(due("in 3 days"), day(2026, 1, 17));
         assert_eq!(due("in a week"), day(2026, 1, 21));
