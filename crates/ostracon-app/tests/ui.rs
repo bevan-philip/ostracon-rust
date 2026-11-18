@@ -7,7 +7,7 @@ use gpui_kit::component::Root;
 use gpui_kit::{AppContext as _, Entity, TestAppContext, VisualTestContext};
 use ostracon_app::state::{AppState, Composer, Dialog};
 use ostracon_app::ui::{actions, workspace::Workspace};
-use ostracon_core::{NewTask, ProjectColor, Repository};
+use ostracon_core::{Due, NewTask, ProjectColor, Repository};
 
 fn open(
     cx: &mut TestAppContext,
@@ -359,4 +359,35 @@ fn the_overview_name_reads_a_project_typed_into_it(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
     assert_eq!(names(&workspace, cx), ["B"]);
+}
+
+#[gpui_kit::test]
+fn overview_side_values_sit_flush_with_their_labels(cx: &mut TestAppContext) {
+    let (workspace, cx) = open(cx, |repo| {
+        let project = repo
+            .create_project("close to the edge", ProjectColor::Blue)
+            .unwrap();
+        repo.add_task(NewTask {
+            name: "Siberian Khatru".into(),
+            project_id: Some(project.id),
+            due: Some(Due::day(jiff::civil::date(2026, 11, 20))),
+            ..Default::default()
+        })
+        .unwrap();
+    });
+    let id = workspace.read_with(cx, |w, _| w.state.tasks()[0].id);
+    workspace.update_in(cx, |w, window, cx| {
+        w.act(window, cx, |s| s.open_overview(id))
+    });
+    cx.run_until_parked();
+    // The project value is wrapped in a dropdown menu and the date's isn't. Stretched across the side panel,
+    // either button would centre its icon and text instead of lining them up with the label.
+    for (label, value) in [
+        ("overview-label-Project", "overview-project"),
+        ("overview-label-Date", "overview-date"),
+    ] {
+        let label = cx.debug_bounds(label).expect(label);
+        let value = cx.debug_bounds(value).expect(value);
+        assert_eq!(value.left(), label.left(), "{value:?} under {label:?}");
+    }
 }

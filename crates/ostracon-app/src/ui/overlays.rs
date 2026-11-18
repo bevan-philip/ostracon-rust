@@ -302,14 +302,17 @@ impl Workspace {
                 .text_size(px(13.))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(palette.muted)
+                .debug_selector(move || format!("overview-label-{label}"))
                 .child(label)
         };
         // A section of the side panel: its label with an optional button on the right, then its values, divided
-        // from the next.
+        // from the next. Values keep to the left: stretched across the panel, a button centres its content, and
+        // wrappers such as a dropdown menu's would stretch even when the button itself doesn't.
         let section = |label: &'static str, add: Option<Button>| {
             div()
                 .flex()
                 .flex_col()
+                .items_start()
                 .gap_1()
                 .py(px(10.))
                 .border_b_1()
@@ -317,6 +320,7 @@ impl Workspace {
                 .child(
                     div()
                         .flex()
+                        .self_stretch()
                         .items_center()
                         .justify_between()
                         .h(px(24.))
@@ -920,24 +924,20 @@ impl Render for Workspace {
 }
 
 /// A value in a section of the overview's side panel: icon and text, flush with the label above. The button's
-/// own padding hangs out to the left so its hover background doesn't push the text in. It is only as wide as
-/// its content: stretched across the section, the button would centre it.
-fn side_value(button: Button, icon: Icon, label: impl Into<SharedString>) -> Button {
-    button
-        .ghost()
-        .small()
-        .self_start()
-        .ml(px(-8.))
-        .h(px(28.))
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2p5()
-                .text_size(px(14.))
-                .child(icon.small())
-                .child(label.into()),
-        )
+/// own padding hangs out to the left so its hover background doesn't push the text in. `section` keeps it only as
+/// wide as its content.
+fn side_value(mut button: Button, icon: Icon, label: impl Into<SharedString>) -> Button {
+    let id = button.interactivity().element_id.clone();
+    button.ghost().small().ml(px(-8.)).h(px(28.)).child(
+        div()
+            .flex()
+            .items_center()
+            .gap_2p5()
+            .text_size(px(14.))
+            .when_some(id, |d, id| d.debug_selector(|| id.to_string()))
+            .child(icon.small())
+            .child(label.into()),
+    )
 }
 
 /// `section` with the picker, if open, hanging just below it.
