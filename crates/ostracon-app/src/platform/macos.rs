@@ -140,7 +140,16 @@ impl Notifier {
         }
         let permission = Arc::clone(&self.permission);
         let completion = RcBlock::new(move |granted: Bool, _error: *mut NSError| {
-            permission.store(if granted.as_bool() { 1 } else { 2 }, Ordering::Relaxed);
+            // Not granted isn't the same as denied: the request also fails while the user hasn't answered
+            // (for one, when the app launched in the background), and that mustn't show the "off" banner.
+            if granted.as_bool() {
+                permission.store(1, Ordering::Relaxed);
+            } else {
+                read_permission(
+                    &UNUserNotificationCenter::currentNotificationCenter(),
+                    Arc::clone(&permission),
+                );
+            }
         });
         self.center
             .requestAuthorizationWithOptions_completionHandler(
@@ -150,19 +159,7 @@ impl Notifier {
     }
 
     pub fn refresh_permission(&self) {
-        let permission = Arc::clone(&self.permission);
-        let completion = RcBlock::new(move |settings: NonNull<UNNotificationSettings>| {
-            // SAFETY: the settings object is valid for the duration of the callback.
-            let status = unsafe { settings.as_ref() }.authorizationStatus();
-            let value = match status {
-                UNAuthorizationStatus::Denied => 2,
-                UNAuthorizationStatus::NotDetermined => 0,
-                _ => 1,
-            };
-            permission.store(value, Ordering::Relaxed);
-        });
-        self.center
-            .getNotificationSettingsWithCompletionHandler(&completion);
+        read_permission(&self.center, Arc::clone(&self.permission));
     }
 
     pub fn permission(&self) -> Permission {
@@ -240,4 +237,19 @@ impl Delegate {
         // SAFETY: NSObject's init is its designated initializer.
         unsafe { msg_send![super(this), init] }
     }
+}
+
+/// Stores the system's actual authorization status in `permission`, when it arrives.
+fn read_permission(center: &UNUserNotificationCenter, permission: Arc<AtomicU8>) {
+    let completion = RcBlock::new(move |settings: NonNull<UNNotificationSettings>| {
+        // SAFETY: the settings object is valid for the duration of the callback.
+        let status = unsafe { settings.as_ref() }.authorizationStatus();
+        let value = match status {
+            UNAuthorizationStatus::Denied => 2,
+            UNAuthorizationStatus::NotDetermined => 0,
+            _ => 1,
+        };
+        permission.store(value, Ordering::Relaxed);
+    });
+    center.getNotificationSettingsWithCompletionHandler(&completion);
 }
