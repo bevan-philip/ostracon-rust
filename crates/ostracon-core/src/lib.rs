@@ -10,6 +10,7 @@ pub mod quickadd;
 pub mod repo;
 pub mod schedule;
 pub mod settings;
+pub mod tools;
 pub mod tree;
 
 pub use model::{Due, Project, ProjectColor, ProjectId, Reminder, Task, TaskId};

@@ -242,7 +242,7 @@ fn a_failed_step_rolls_back_the_whole_change() {
             repo.set_completed(a, true)?;
             Err(Error::EmptyName)
         });
-        Ok(())
+        Ok::<_, Error>(())
     })
     .unwrap();
     let task = repo.task(a).unwrap();
@@ -282,7 +282,7 @@ fn concurrent_writers_wait_for_each_other() {
                     repo.transaction(|| {
                         add(&repo, &format!("{n}-{i}"), None);
                         std::thread::sleep(Duration::from_micros(200));
-                        Ok(())
+                        Ok::<_, Error>(())
                     })
                     .unwrap();
                 }

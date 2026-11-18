@@ -160,14 +160,22 @@ impl Repository {
     }
 
     /// Runs `change` atomically: everything it does is kept, or, if it fails, none of it is.
-    pub fn transaction<T>(&self, change: impl FnOnce() -> Result<T>) -> Result<T> {
+    ///
+    /// Works with any error type that a repository error converts into, so callers such as the tools can roll
+    /// back on their own errors.
+    pub fn transaction<T, E: From<Error>>(
+        &self,
+        change: impl FnOnce() -> std::result::Result<T, E>,
+    ) -> std::result::Result<T, E> {
         let depth = self.depth.get();
-        if depth == 0 {
-            self.conn.execute_batch("BEGIN IMMEDIATE")?;
+        let begin = if depth == 0 {
+            "BEGIN IMMEDIATE".to_owned()
         } else {
-            self.conn
-                .execute_batch(&format!("SAVEPOINT nested_{depth}"))?;
-        }
+            format!("SAVEPOINT nested_{depth}")
+        };
+        self.conn
+            .execute_batch(&begin)
+            .map_err(|e| E::from(e.into()))?;
         self.depth.set(depth + 1);
         let result = change();
         self.depth.set(depth);
@@ -183,7 +191,7 @@ impl Repository {
                     if depth == 0 {
                         let _ = finish("ROLLBACK".to_owned());
                     }
-                    return Err(error.into());
+                    return Err(Error::from(error).into());
                 }
                 Ok(value)
             }
