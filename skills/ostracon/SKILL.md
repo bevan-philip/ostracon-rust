@@ -12,7 +12,7 @@ Ostracon is a local, Todoist-style task manager backed by one SQLite file. The `
 Use the first of these that exists:
 
 1. `ostracon` on the `PATH` (`command -v ostracon`)
-2. `/Applications/Ostracon.app/Contents/MacOS/ostracon`
+2. `/Applications/Ostracon.app/Contents/MacOS/ostracon-cli` (the same program, named so it doesn't clash with the app on a case-insensitive disk)
 3. `~/.cargo/bin/ostracon`
 4. In a checkout of the Ostracon repository: `cargo run -q -p ostracon-cli --`
 

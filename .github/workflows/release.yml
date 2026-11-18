@@ -1,0 +1,48 @@
+# Pushing a version tag (git tag v1.2.0 && git push origin v1.2.0) tests, builds Ostracon.app and the
+# command-line tools, and publishes them as a GitHub release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Build
+        env:
+          TAG: ${{ github.ref_name }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: VERSION="${TAG#v}" scripts/bundle-macos.sh
+
+      - name: Package
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          ditto -c -k --keepParent dist/Ostracon.app "dist/Ostracon-$TAG-macos-arm64.zip"
+          mkdir -p "dist/ostracon-tools-$TAG"
+          cp dist/Ostracon.app/Contents/MacOS/ostracon-cli "dist/ostracon-tools-$TAG/ostracon"
+          cp dist/Ostracon.app/Contents/MacOS/ostracon-mcp "dist/ostracon-tools-$TAG/"
+          cp -R skills "dist/ostracon-tools-$TAG/"
+          tar -C dist -czf "dist/ostracon-tools-$TAG-macos-arm64.tar.gz" "ostracon-tools-$TAG"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          prerelease=()
+          [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
+          gh release create "$TAG" "dist/Ostracon-$TAG-macos-arm64.zip" "dist/ostracon-tools-$TAG-macos-arm64.tar.gz" \
+            --title "Ostracon ${TAG#v}" --generate-notes --verify-tag "${prerelease[@]}"

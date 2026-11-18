@@ -1,0 +1,32 @@
+# Lint and test on every push to main and every pull request.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The whole workspace, app included, on macOS.
+          - os: macos-latest
+            packages: --workspace
+          # Everything but the GPUI app on Linux and Windows, which have no GPUI dependencies installed.
+          - os: ubuntu-latest
+            packages: -p ostracon-core -p ostracon-cli -p ostracon-mcp
+          - os: windows-latest
+            packages: -p ostracon-core -p ostracon-cli -p ostracon-mcp
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      # rustup reads rust-toolchain.toml and installs the pinned toolchain.
+      - run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: cargo clippy ${{ matrix.packages }} --all-targets -- -D warnings
+      - name: Test
+        run: cargo test ${{ matrix.packages }}

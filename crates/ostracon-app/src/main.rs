@@ -8,6 +8,9 @@ use ostracon_app::ui::workspace::Workspace;
 use ostracon_core::Repository;
 use ostracon_core::paths;
 
+/// Must match `CFBundleIdentifier` in `scripts/bundle-macos.sh`.
+const BUNDLE_ID: &str = "uk.bphilip.ostracon.app";
+
 fn main() {
     let location = paths::database_location();
     let (repo, startup_error) = match Repository::open(&location.path) {
@@ -27,7 +30,7 @@ fn main() {
         .run(move |cx| {
             gpui_kit::init(cx);
             gpui_kit::component::Theme::sync_system_appearance(None, cx);
-            cx.set_app_identity("uk.bphilip.ostracon", "Ostracon");
+            cx.set_app_identity(BUNDLE_ID, "Ostracon");
             actions::bind_keys(cx);
             cx.on_action(|_: &Quit, cx| cx.quit());
             cx.set_menus(vec![
