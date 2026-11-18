@@ -334,16 +334,17 @@ impl Workspace {
             .next()
             .map(str::to_owned)
             .filter(|d| !d.is_empty());
-        let label: SharedString = {
+        let dragged = {
             let ids = self.state.acting_on(Some(id));
-            if ids.len() > 1 {
+            let label: SharedString = if ids.len() > 1 {
                 format!("{} tasks", ids.len()).into()
             } else {
                 task.name.clone().into()
-            }
+            };
+            DraggedTasks { ids, label }
         };
 
-        div()
+        let row = div()
             .id(("task", id.0 as usize))
             .relative()
             .pl(px(GUTTER + indent))
@@ -351,20 +352,10 @@ impl Workspace {
             .when(selected, |d| d.bg(palette.row_selected))
             .when(!selected, |d| d.hover(|d| d.bg(palette.row_hover)))
             .rounded_md()
-            .on_drag(
-                DraggedTasks {
-                    ids: Vec::new(),
-                    label,
-                },
-                {
-                    let ids = self.state.acting_on(Some(id));
-                    move |drag: &DraggedTasks, _, _, cx| {
-                        let mut drag = drag.clone();
-                        drag.ids = ids.clone();
-                        cx.new(|_| drag)
-                    }
-                },
-            )
+            // The drop target receives this value, not the preview view, so it must carry the ids.
+            .on_drag(dragged, |drag: &DraggedTasks, _, _, cx| {
+                cx.new(|_| drag.clone())
+            })
             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                 this.click_row(id, event, window, cx)
             }))
@@ -420,8 +411,9 @@ impl Workspace {
                                 )
                             }),
                     ),
-            )
-            .into_any_element()
+            );
+
+        row.test_support().into_any_element()
     }
 
     /// ⌘-click toggles, ⇧-click extends, a double click edits in place, and a single click selects and then

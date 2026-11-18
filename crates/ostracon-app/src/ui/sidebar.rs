@@ -172,26 +172,30 @@ impl Workspace {
                 })
             });
         if project.is_inbox {
-            return row.into_any_element();
+            return row.test_support().into_any_element();
         }
         let entity = cx.entity();
-        row.context_menu(move |menu, _, _| {
-            let (edit, delete) = (entity.clone(), entity.clone());
-            menu.item(
-                PopupMenuItem::new("Edit project…").on_click(move |_, window, cx| {
-                    edit.update(cx, |this, cx| {
-                        this.act(window, cx, |s| s.start_editing_project(id))
-                    });
-                }),
-            )
-            .item(
-                PopupMenuItem::new("Delete project…").on_click(move |_, window, cx| {
-                    delete.update(cx, |this, cx| {
-                        this.act(window, cx, |s| s.request_delete_project(id))
-                    });
-                }),
-            )
-        })
-        .into_any_element()
+        // The menu lives on a wrapper so the row itself can be registered for UI tests.
+        div()
+            .id(("project-menu", id.0 as usize))
+            .child(row.test_support())
+            .context_menu(move |menu, _, _| {
+                let (edit, delete) = (entity.clone(), entity.clone());
+                menu.item(
+                    PopupMenuItem::new("Edit project…").on_click(move |_, window, cx| {
+                        edit.update(cx, |this, cx| {
+                            this.act(window, cx, |s| s.start_editing_project(id))
+                        });
+                    }),
+                )
+                .item(
+                    PopupMenuItem::new("Delete project…").on_click(move |_, window, cx| {
+                        delete.update(cx, |this, cx| {
+                            this.act(window, cx, |s| s.request_delete_project(id))
+                        });
+                    }),
+                )
+            })
+            .into_any_element()
     }
 }

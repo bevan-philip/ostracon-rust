@@ -182,3 +182,33 @@ fn editing_in_place_and_the_overview(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(workspace.read_with(cx, |w, _| w.state.overview), None);
 }
+
+#[gpui_kit::test]
+fn dragging_a_task_onto_a_project_moves_it(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let mut garden = None;
+    let (workspace, cx) = open(cx, |repo| {
+        garden = Some(
+            repo.create_project("Garden", ProjectColor::Green)
+                .unwrap()
+                .id,
+        );
+        repo.add_task(NewTask {
+            name: "Water plants".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    });
+    let garden = garden.unwrap();
+    let task = workspace.read_with(cx, |w, _| w.state.rows()[0].id());
+    cx.update(|window, cx| {
+        window.drag_to(
+            ("task", task.0 as usize),
+            ("project", garden.0 as usize),
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    let project = workspace.read_with(cx, |w, _| w.state.task(task).unwrap().project_id);
+    assert_eq!(project, garden);
+}
