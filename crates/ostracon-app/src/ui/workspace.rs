@@ -675,8 +675,8 @@ impl Workspace {
         }
     }
 
-    /// Esc closes the topmost layer: a picker, a confirmation, settings, a dialog, the overview, then the
-    /// selection.
+    /// Esc closes the topmost layer: a picker, a confirmation, settings, a dialog, the overview, the composer, then
+    /// the selection.
     pub fn escape(&mut self, _: &Escape, window: &mut Window, cx: &mut Context<Self>) {
         if self
             .overview
@@ -704,6 +704,9 @@ impl Workspace {
         } else if let Some(id) = self.state.overview {
             self.save_overview(id, window, cx);
             self.act(window, cx, AppState::close_overview);
+        } else if self.state.composer.is_in_list() {
+            // Focus has left the composer, say for a click in the list, so its own Esc can't close it.
+            self.act(window, cx, AppState::close_composer);
         } else {
             self.act(window, cx, AppState::clear_selection);
         }
