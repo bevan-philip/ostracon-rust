@@ -112,6 +112,8 @@ pub enum Dialog {
     ProjectEditor(ProjectDraft),
     ConfirmDeleteTasks(Vec<TaskId>),
     ConfirmDeleteProject(ProjectId),
+    /// Discarding what's unsaved in the list's composer, to open the overview of the task clicked.
+    ConfirmDiscard(TaskId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1022,6 +1024,13 @@ impl AppState {
         }
     }
 
+    /// A click on a task while the list's composer holds unsaved changes: asks before throwing them away.
+    pub fn request_discard_to_open(&mut self, id: TaskId) {
+        if self.composer.is_in_list() && self.is_in_list(id) {
+            self.dialog = Dialog::ConfirmDiscard(id);
+        }
+    }
+
     pub fn cancel_dialog(&mut self) {
         self.dialog = Dialog::None;
     }
@@ -1054,7 +1063,7 @@ impl AppState {
         true
     }
 
-    /// Confirms the open deletion dialog.
+    /// Confirms the open deletion or discard dialog.
     pub fn confirm_dialog(&mut self) {
         match std::mem::take(&mut self.dialog) {
             Dialog::ConfirmDeleteTasks(ids) => {
@@ -1068,6 +1077,10 @@ impl AppState {
             }
             Dialog::ConfirmDeleteProject(id) => {
                 self.perform(|repo| repo.delete_project(id).map(drop));
+            }
+            Dialog::ConfirmDiscard(id) => {
+                self.select_only(id);
+                self.open_overview(id);
             }
             other => self.dialog = other,
         }
@@ -1233,7 +1246,8 @@ impl AppState {
     /// - Selected tasks are rows in the list; one that left it hands its place to the collapsed parent hiding
     ///   it, as in Finder, or leaves the selection.
     /// - The composer edits, or adds a subtask to, a task that is a row, or adds one to the overview's task.
-    /// - The overview and dialogs refer to projects and tasks that still exist.
+    /// - The overview and dialogs refer to projects and tasks that still exist, and a discard dialog to a task
+    ///   that is a row while the composer is still open in the list.
     pub fn reconcile(&mut self) {
         if self.current_project().is_none()
             && let Some(inbox) = self.snapshot.inbox()
@@ -1312,6 +1326,7 @@ impl AppState {
                 .project
                 .is_some_and(|id| self.project_by_id(id).is_none()),
             Dialog::ConfirmDeleteProject(id) => self.project_by_id(*id).is_none(),
+            Dialog::ConfirmDiscard(id) => !self.composer.is_in_list() || !self.is_in_list(*id),
             Dialog::ConfirmDeleteTasks(ids) => {
                 let remaining: Vec<TaskId> = ids
                     .iter()

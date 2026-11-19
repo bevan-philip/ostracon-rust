@@ -59,6 +59,16 @@ impl Workspace {
                     "Dialog",
                 )
             }
+            (_, Dialog::ConfirmDiscard(_)) => (
+                self.confirm_card(
+                    "Discard unsaved changes?".into(),
+                    "Your unsaved changes will be discarded.".into(),
+                    "Discard",
+                    &palette,
+                    cx,
+                ),
+                "Dialog",
+            ),
             (_, Dialog::ProjectEditor(_)) => (self.render_project_editor(&palette, cx), "Dialog"),
             (_, Dialog::None) if self.overview.is_some() => {
                 (self.render_overview(&palette, window, cx)?, "Overview")

@@ -328,6 +328,33 @@ fn deleting_asks_then_reconciles() {
 }
 
 #[test]
+fn clicking_a_task_asks_before_discarding_the_composer() {
+    let mut state = state();
+    let ids = add_outline(&mut state, "A\nB");
+    state.start_adding();
+    state.request_discard_to_open(ids[1]);
+    assert_eq!(state.dialog, Dialog::ConfirmDiscard(ids[1]));
+    state.cancel_dialog();
+    assert_eq!(state.composer, Composer::Adding { parent: None });
+    assert_eq!(state.overview, None);
+
+    state.request_discard_to_open(ids[1]);
+    state.confirm_dialog();
+    assert_eq!(state.dialog, Dialog::None);
+    assert_eq!(state.composer, Composer::Closed);
+    assert_eq!(state.overview, Some(ids[1]));
+    assert_eq!(state.selection.anchor(), Some(ids[1]));
+
+    state.close_overview();
+    state.start_editing(Some(ids[0]));
+    state.request_discard_to_open(ids[1]);
+    state.repository().delete_task(ids[1]).unwrap();
+    state.reload();
+    assert_eq!(state.dialog, Dialog::None, "the task to open is gone");
+    assert_eq!(state.composer, Composer::Editing { task: ids[0] });
+}
+
+#[test]
 fn changes_from_elsewhere_are_reconciled() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db.sqlite");

@@ -667,9 +667,9 @@ impl Workspace {
             return;
         }
         match self.state.dialog {
-            Dialog::ConfirmDeleteTasks(_) | Dialog::ConfirmDeleteProject(_) => {
-                self.act(window, cx, AppState::confirm_dialog)
-            }
+            Dialog::ConfirmDeleteTasks(_)
+            | Dialog::ConfirmDeleteProject(_)
+            | Dialog::ConfirmDiscard(_) => self.act(window, cx, AppState::confirm_dialog),
             Dialog::ProjectEditor(_) => self.save_project(window, cx),
             Dialog::None => {}
         }
@@ -700,7 +700,12 @@ impl Workspace {
             Panel::None => {}
         }
         if self.state.dialog != Dialog::None {
+            let discarding = matches!(self.state.dialog, Dialog::ConfirmDiscard(_));
             self.act(window, cx, AppState::cancel_dialog);
+            if discarding && let Some(composer) = &self.composer {
+                // Back to the changes it kept.
+                composer.update(cx, |c, cx| c.focus(window, cx));
+            }
         } else if let Some(id) = self.state.overview {
             self.save_overview(id, window, cx);
             self.act(window, cx, AppState::close_overview);
