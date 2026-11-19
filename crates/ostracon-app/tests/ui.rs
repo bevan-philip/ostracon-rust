@@ -249,6 +249,83 @@ fn dragging_a_task_within_the_list_reorders_and_nests_it(cx: &mut TestAppContext
 }
 
 #[gpui_kit::test]
+fn holding_a_drag_at_the_bottom_edge_scrolls_the_list(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    use gpui_kit::{
+        InputEvent as _, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+        point, px,
+    };
+    let (workspace, cx) = open(cx, |repo| {
+        for i in 0..80 {
+            repo.add_task(NewTask {
+                name: format!("Task {i}"),
+                ..Default::default()
+            })
+            .unwrap();
+        }
+    });
+    let first = workspace.read_with(cx, |w, _| w.state.rows()[0].id());
+    let (from, bottom) = cx.update(|window, _| {
+        (
+            window.find(("task", first.0 as usize)).bounds().center(),
+            window.viewport_size().height,
+        )
+    });
+    let edge = point(from.x, bottom - px(8.));
+    let pointer = |position| MouseMoveEvent {
+        position,
+        pressed_button: Some(MouseButton::Left),
+        modifiers: Modifiers::default(),
+    };
+    cx.update(|window, cx| {
+        window.dispatch_event(pointer(from).to_platform_input(), cx);
+        window.dispatch_event(
+            MouseDownEvent {
+                button: MouseButton::Left,
+                position: from,
+                click_count: 1,
+                ..Default::default()
+            }
+            .to_platform_input(),
+            cx,
+        );
+        window.render_frame(cx);
+        for y in [from.y + px(20.), edge.y] {
+            window.dispatch_event(pointer(point(from.x, y)).to_platform_input(), cx);
+            window.render_frame(cx);
+        }
+    });
+    for _ in 0..200 {
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(16));
+        cx.update(|window, cx| window.render_frame(cx));
+    }
+    cx.run_until_parked();
+    let offset = workspace.read_with(cx, |w, _| w.list_scroll.offset().y);
+    assert!(offset < px(0.), "the list scrolled down, to {offset:?}");
+
+    cx.update(|window, cx| {
+        window.dispatch_event(
+            MouseUpEvent {
+                button: MouseButton::Left,
+                position: edge,
+                click_count: 1,
+                ..Default::default()
+            }
+            .to_platform_input(),
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    let names = names(&workspace, cx);
+    assert_eq!(
+        names.last().map(String::as_str),
+        Some("Task 0"),
+        "scrolled to the end, so the task drops last: {names:?}"
+    );
+}
+
+#[gpui_kit::test]
 fn right_click_menu_selects_the_row_and_deletes_it(cx: &mut TestAppContext) {
     use gpui_kit::test::TestWindowExt as _;
     let (workspace, cx) = open(cx, |repo| {

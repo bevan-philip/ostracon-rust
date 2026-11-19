@@ -90,6 +90,9 @@ pub struct Workspace {
     pub drag_origin: Option<(Pixels, usize)>,
     /// Only meaningful while a drag is active; a drag that ends elsewhere leaves it behind.
     pub drop_hover: Option<DropHover>,
+    /// How far the list scrolls each frame while a drag is held near its top (negative) or bottom edge.
+    pub autoscroll_speed: f32,
+    pub autoscrolling: bool,
     pub toast_timer: Option<(u64, Task<()>)>,
     pub sidebar_scroll: ScrollHandle,
     _tasks: Vec<Task<()>>,
@@ -118,6 +121,8 @@ impl Workspace {
             list_scroll: ScrollHandle::new(),
             drag_origin: None,
             drop_hover: None,
+            autoscroll_speed: 0.,
+            autoscrolling: false,
             toast_timer: None,
             sidebar_scroll: ScrollHandle::new(),
             _tasks: Vec::new(),

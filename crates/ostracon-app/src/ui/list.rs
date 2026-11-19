@@ -1,6 +1,8 @@
 //! The task list: a flat, Todoist-style outline with hairline dividers that start at the checkbox, disclosure
 //! chevrons hanging in the left margin, and the composer inline where it belongs.
 
+use std::time::Duration;
+
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
@@ -103,12 +105,18 @@ impl Workspace {
                 div()
                     .id("task-list")
                     .on_drag_move(cx.listener(
-                        |this, event: &DragMoveEvent<DraggedTasks>, _, cx| {
-                            if !event.bounds.contains(&event.event.position)
-                                && this.drop_hover.take().is_some()
-                            {
+                        |this, event: &DragMoveEvent<DraggedTasks>, window, cx| {
+                            let position = event.event.position;
+                            let inside = event.bounds.contains(&position);
+                            if !inside && this.drop_hover.take().is_some() {
                                 cx.notify();
                             }
+                            this.autoscroll_speed = if inside {
+                                autoscroll_speed(event.bounds, position.y)
+                            } else {
+                                0.
+                            };
+                            this.start_autoscroll(window, cx);
                         },
                     ))
                     .on_drop(cx.listener(|this, drag: &DraggedTasks, window, cx| {
@@ -159,6 +167,56 @@ impl Workspace {
     fn drop_target(&self, cx: &App) -> Option<DropTarget> {
         let hover = self.drop_hover.as_ref().filter(|_| cx.has_active_drag())?;
         Some(self.state.drop_target(&hover.ids, hover.gap, hover.depth))
+    }
+
+    /// While a drag is held near an edge of the list, scrolls it a step each frame, then replays the pointer
+    /// where it is so the rows that scroll under it update the drop line.
+    fn start_autoscroll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.autoscrolling || self.autoscroll_speed == 0. {
+            return;
+        }
+        self.autoscrolling = true;
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(16))
+                    .await;
+                let Ok(scrolling) = this.update(cx, |this, cx| this.autoscroll_step(cx)) else {
+                    break;
+                };
+                if !scrolling {
+                    break;
+                }
+                // Outside the update, as the replayed move reaches this view's own listeners.
+                let replayed = cx.update(|window, cx| {
+                    let event = MouseMoveEvent {
+                        position: window.mouse_position(),
+                        pressed_button: Some(MouseButton::Left),
+                        modifiers: window.modifiers(),
+                    };
+                    window.dispatch_event(event.to_platform_input(), cx);
+                });
+                if replayed.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Scrolls the list one step for the drag in progress. Returns `false`, and stops, once there is no drag,
+    /// the pointer has left the edges, or the list can't scroll further that way.
+    fn autoscroll_step(&mut self, cx: &mut Context<Self>) -> bool {
+        let offset = self.list_scroll.offset();
+        let y =
+            (offset.y - px(self.autoscroll_speed)).clamp(-self.list_scroll.max_offset().y, px(0.));
+        if !cx.has_active_drag() || self.autoscroll_speed == 0. || y == offset.y {
+            self.autoscrolling = false;
+            return false;
+        }
+        self.list_scroll.set_offset(point(offset.x, y));
+        cx.notify();
+        true
     }
 
     /// Notes that the dragged tasks are over the gap before row `gap`. Dragging sideways from where the drag
@@ -607,6 +665,22 @@ impl Workspace {
                 s.open_overview(id);
             });
         }
+    }
+}
+
+/// How far the list scrolls each frame for a drag at `y`: faster the nearer it is to the top (negative) or
+/// bottom edge, and not at all away from them.
+fn autoscroll_speed(list: Bounds<Pixels>, y: Pixels) -> f32 {
+    const EDGE: f32 = 56.;
+    const FASTEST: f32 = 18.;
+    let from_top = f32::from(y - list.top());
+    let from_bottom = f32::from(list.bottom() - y);
+    if from_top < EDGE {
+        -FASTEST * (1. - from_top.max(0.) / EDGE)
+    } else if from_bottom < EDGE {
+        FASTEST * (1. - from_bottom.max(0.) / EDGE)
+    } else {
+        0.
     }
 }
 
