@@ -206,15 +206,11 @@ fn the_overview_adds_subtasks_with_the_full_composer() {
 }
 
 #[test]
-fn closing_the_overview_with_the_mouse_clears_the_selection() {
+fn dismissing_the_overview_clears_the_selection() {
     let mut state = state();
     let ids = add_outline(&mut state, "A\nB");
     state.select_only(ids[0]);
     state.open_overview(ids[0]);
-    state.close_overview();
-    assert_eq!(state.selection.anchor(), Some(ids[0]), "Esc keeps it");
-
-    state.open_overview(ids[1]);
     state.dismiss_overview();
     assert_eq!(state.overview, None);
     assert_eq!(state.selection, Selection::Empty);

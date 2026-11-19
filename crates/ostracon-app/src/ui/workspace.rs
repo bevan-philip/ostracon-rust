@@ -708,30 +708,12 @@ impl Workspace {
             }
         } else if let Some(id) = self.state.overview {
             self.save_overview(id, window, cx);
-            self.act(window, cx, AppState::close_overview);
+            self.act(window, cx, AppState::dismiss_overview);
         } else if self.state.composer.is_in_list() {
             // Focus has left the composer, say for a click in the list, so its own Esc can't close it.
             self.act(window, cx, AppState::close_composer);
         } else {
             self.act(window, cx, AppState::clear_selection);
-        }
-    }
-
-    /// A click on the modal backdrop: closes the top layer as Esc does, but closing the overview this way
-    /// leaves nothing selected.
-    pub fn click_off(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let overview_on_top = self
-            .overview
-            .as_ref()
-            .is_some_and(|o| matches!(o.picker, OverviewPicker::Closed))
-            && self.panel == Panel::None
-            && self.state.dialog == Dialog::None;
-        match self.state.overview {
-            Some(id) if overview_on_top => {
-                self.save_overview(id, window, cx);
-                self.act(window, cx, AppState::dismiss_overview);
-            }
-            _ => self.escape(&Escape, window, cx),
         }
     }
 

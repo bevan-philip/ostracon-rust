@@ -87,12 +87,11 @@ impl Workspace {
                 .key_context(format!("Modal {context}").as_str())
                 .track_focus(&self.modal_focus)
                 .occlude()
-                // A click on the backdrop closes the top layer, as Esc does, except that closing the overview
-                // this way also clears the selection. It calls the handler rather than dispatching the action,
-                // which would need focus to be inside the modal.
+                // A click on the backdrop closes the top layer, as Esc does. It calls the handler rather than
+                // dispatching the action, which would need focus to be inside the modal.
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(|this, _, window, cx| this.click_off(window, cx)),
+                    cx.listener(|this, _, window, cx| this.escape(&Escape, window, cx)),
                 )
                 .child(content)
                 .into_any_element(),

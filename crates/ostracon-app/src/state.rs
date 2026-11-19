@@ -673,8 +673,8 @@ impl AppState {
         self.reconcile();
     }
 
-    /// Closes the overview with the mouse, which leaves nothing selected, as clicking off a task does. Esc
-    /// keeps the selection so the keyboard can carry on from the task.
+    /// Closes the overview at the user's request (Esc, the close button or a click off it), which leaves
+    /// nothing selected.
     pub fn dismiss_overview(&mut self) {
         self.close_overview();
         self.clear_selection();
