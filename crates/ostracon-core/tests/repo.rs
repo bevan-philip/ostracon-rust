@@ -187,6 +187,41 @@ fn moving_skips_completed_siblings() {
 }
 
 #[test]
+fn placing_tasks_reorders_and_nests_them() {
+    let repo = Repository::in_memory().unwrap();
+    let inbox = repo.inbox().unwrap().id;
+    let a = add(&repo, "A", None);
+    let a1 = add(&repo, "A1", Some(a));
+    let b = add(&repo, "B", None);
+    let c = add(&repo, "C", None);
+    let d = add(&repo, "D", None);
+    repo.place(&[c], inbox, None, None).unwrap();
+    assert_eq!(names(&repo, false), ["C", "A", "  A1", "B", "D"]);
+    repo.place(&[d, b], inbox, Some(a), Some(a1)).unwrap();
+    assert_eq!(
+        names(&repo, false),
+        ["C", "A", "  A1", "  D", "  B"],
+        "several tasks land together, in the order given"
+    );
+    repo.place(&[a], inbox, None, Some(c)).unwrap();
+    repo.set_collapsed(c, true).unwrap();
+    repo.place(&[a], inbox, Some(c), None).unwrap();
+    assert_eq!(
+        names(&repo, false),
+        ["C", "  A", "    A1", "    D", "    B"],
+        "subtasks come along, and a collapsed parent opens"
+    );
+    assert!(matches!(
+        repo.place(&[c], inbox, Some(a1), None),
+        Err(Error::InsideItself(id)) if id == c
+    ));
+    assert!(matches!(
+        repo.place(&[d], inbox, None, Some(a1)),
+        Err(Error::NotASibling(id)) if id == a1
+    ));
+}
+
+#[test]
 fn moving_to_a_project_takes_subtasks() {
     let repo = Repository::in_memory().unwrap();
     let work = repo.create_project("Work", ProjectColor::Red).unwrap();

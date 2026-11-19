@@ -31,6 +31,10 @@ pub enum Error {
     InboxIsFixed,
     #[error("task {0} is in a different project, so it can't be the parent")]
     ParentInOtherProject(TaskId),
+    #[error("task {0} can't go inside its own subtasks")]
+    InsideItself(TaskId),
+    #[error("task {0} isn't under the parent the tasks are going to")]
+    NotASibling(TaskId),
     #[error("{0} isn't an Ostracon database")]
     NotADatabase(PathBuf),
     #[error("{0} was written by a newer version of Ostracon")]
@@ -558,6 +562,60 @@ impl Repository {
             all.swap(from, to);
             self.renumber(&all)?;
             Ok(true)
+        })
+    }
+
+    /// Moves tasks, with their subtasks, to sit together in order under `parent` (the top level of `project`
+    /// when `None`), straight after its subtask `after`, or first when `None`. A collapsed parent is expanded
+    /// so they stay in sight.
+    pub fn place(
+        &self,
+        ids: &[TaskId],
+        project: ProjectId,
+        parent: Option<TaskId>,
+        after: Option<TaskId>,
+    ) -> Result<()> {
+        self.transaction(|| {
+            self.project(project)?;
+            if let Some(parent) = parent {
+                if self.task(parent)?.project_id != project {
+                    return Err(Error::ParentInOtherProject(parent));
+                }
+                for &id in ids {
+                    if self.subtree(id)?.contains(&parent) {
+                        return Err(Error::InsideItself(id));
+                    }
+                }
+                self.conn
+                    .execute("UPDATE tasks SET collapsed = 0 WHERE id = ?", [parent.0])?;
+            }
+            let mut siblings = self.siblings(project, parent, false)?;
+            siblings.retain(|id| !ids.contains(id));
+            let index = match after {
+                None => 0,
+                Some(after) => {
+                    siblings
+                        .iter()
+                        .position(|&s| s == after)
+                        .ok_or(Error::NotASibling(after))?
+                        + 1
+                }
+            };
+            for &id in ids {
+                self.task(id)?;
+                self.conn.execute(
+                    "UPDATE tasks SET parent_id = ? WHERE id = ?",
+                    params![parent.map(|p| p.0), id.0],
+                )?;
+                for task in self.subtree(id)? {
+                    self.conn.execute(
+                        "UPDATE tasks SET project_id = ? WHERE id = ?",
+                        params![project.0, task.0],
+                    )?;
+                }
+            }
+            siblings.splice(index..index, ids.iter().copied());
+            self.renumber(&siblings)
         })
     }
 
