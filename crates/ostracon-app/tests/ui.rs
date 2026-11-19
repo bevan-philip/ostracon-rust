@@ -137,6 +137,26 @@ fn list_keyboard_flow(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn cmd_enter_saves_the_composer(cx: &mut TestAppContext) {
+    let (workspace, cx) = open(cx, |_| {});
+    cx.simulate_keystrokes("a");
+    cx.simulate_input("A");
+    cx.simulate_keystrokes("secondary-enter escape");
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["A"]);
+
+    cx.simulate_keystrokes("j enter end");
+    cx.simulate_input(" two");
+    cx.simulate_keystrokes("secondary-enter");
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["A two"]);
+    assert_eq!(
+        workspace.read_with(cx, |w, _| w.state.composer),
+        Composer::Closed
+    );
+}
+
+#[gpui_kit::test]
 fn typing_in_the_composer_never_triggers_list_shortcuts(cx: &mut TestAppContext) {
     let (workspace, cx) = open(cx, |_| {});
     cx.simulate_keystrokes("a");

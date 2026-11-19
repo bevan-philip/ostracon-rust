@@ -81,6 +81,7 @@ pub fn bind_keys(cx: &mut App) {
         key("secondary-v", Paste, c, cx),
         key("secondary-c", Copy, c, cx),
         key("secondary-x", Cut, c, cx),
+        key("secondary-enter", Submit, c, cx),
     ];
     cx.bind_keys(bindings);
     cx.bind_keys([
