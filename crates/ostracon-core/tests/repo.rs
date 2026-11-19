@@ -18,7 +18,8 @@ fn add(repo: &Repository, name: &str, parent: Option<TaskId>) -> TaskId {
 fn names(repo: &Repository, show_completed: bool) -> Vec<String> {
     let inbox = repo.inbox().unwrap().id;
     tree::rows(&repo.tasks().unwrap(), inbox, show_completed)
-        .into_iter()
+        .all()
+        .iter()
         .map(|row| format!("{}{}", "  ".repeat(row.depth), row.task.name))
         .collect()
 }
@@ -244,6 +245,7 @@ fn collapsed_tasks_hide_subtasks_and_parents_count_completed_ones() {
     repo.set_completed(b, true).unwrap();
     let inbox = repo.inbox().unwrap().id;
     let rows = tree::rows(&repo.tasks().unwrap(), inbox, false);
+    let rows = rows.all();
     assert_eq!(rows.len(), 2);
     assert_eq!(
         (

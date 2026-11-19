@@ -17,7 +17,7 @@ use super::actions::{Complete, Delete, Edit, NewSubtask, OpenOverview};
 use super::theme::{self, CHECKBOX, INDENT, META_TEXT, Palette, TASK_TEXT};
 use super::workspace::{DraggedTasks, DropHover, Workspace};
 use crate::format;
-use crate::state::{Composer, DropTarget, ListItem};
+use crate::state::{DropTarget, ListItem};
 
 /// The list's left edge to the checkbox: room for the chevrons hanging in the margin.
 const GUTTER: f32 = 40.;
@@ -30,48 +30,11 @@ impl Workspace {
         let items = self.state.list_items();
         let show_completed = self.state.show_completed;
         let empty = self.state.rows().is_empty() && !self.state.composer.is_in_list();
-        let completed_start = self.state.completed_start();
+        let outline_len = self.state.outline().len();
         let drop = self.drop_target(cx);
 
         // Open tasks, with "Add task" after them, then completed ones, as in Todoist.
-        let mut rows: Vec<AnyElement> = Vec::new();
-        let mut completed_rows: Vec<AnyElement> = Vec::new();
-        // Each task's index in the rows, which the composer may stand in for.
-        let mut index = 0;
-        for item in items {
-            match item {
-                ListItem::Task(row) => {
-                    let element = self.render_row(&row, index, drop, &now, &palette, cx);
-                    if index < completed_start {
-                        rows.push(element);
-                    } else {
-                        completed_rows.push(element);
-                    }
-                    index += 1;
-                }
-                ListItem::Composer { mode, depth } => {
-                    if matches!(mode, Composer::Editing { .. }) {
-                        index += 1;
-                    }
-                    // It belongs with the row it stands in for, or follows.
-                    let completed = index > completed_start;
-                    if let Some(composer) = &self.composer {
-                        let target = if completed {
-                            &mut completed_rows
-                        } else {
-                            &mut rows
-                        };
-                        target.push(
-                            div()
-                                .pl(px(GUTTER + depth as f32 * INDENT - 4.))
-                                .py_2()
-                                .child(composer.clone())
-                                .into_any_element(),
-                        );
-                    }
-                }
-            }
-        }
+        let mut rows = self.render_items(items.outline, drop, &now, &palette, cx);
         if let Some(target) = drop.filter(|t| t.before.is_none()) {
             rows.push(
                 div()
@@ -86,7 +49,7 @@ impl Workspace {
                     .id("add-task")
                     .on_drag_move(cx.listener(
                         move |this, event: &DragMoveEvent<DraggedTasks>, _, cx| {
-                            this.hover_gap(event, completed_start, cx)
+                            this.hover_gap(event, outline_len, cx)
                         },
                     ))
                     .flex()
@@ -108,7 +71,7 @@ impl Workspace {
                     .into_any_element(),
             );
         }
-        rows.append(&mut completed_rows);
+        rows.extend(self.render_items(items.completed, drop, &now, &palette, cx));
 
         div()
             .flex()
@@ -176,6 +139,32 @@ impl Workspace {
                             }),
                     ),
             )
+    }
+
+    /// One section of the list: its task rows, and the composer if it is there.
+    fn render_items(
+        &self,
+        items: Vec<ListItem>,
+        drop: Option<DropTarget>,
+        now: &ZonedDateTime,
+        palette: &Palette,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        items
+            .into_iter()
+            .filter_map(|item| match item {
+                ListItem::Task { row, index } => {
+                    Some(self.render_row(&row, index, drop, now, palette, cx))
+                }
+                ListItem::Composer { depth, .. } => self.composer.as_ref().map(|composer| {
+                    div()
+                        .pl(px(GUTTER + depth as f32 * INDENT - 4.))
+                        .py_2()
+                        .child(composer.clone())
+                        .into_any_element()
+                }),
+            })
+            .collect()
     }
 
     /// Where the dragged tasks would land, while they are dragged over the list.

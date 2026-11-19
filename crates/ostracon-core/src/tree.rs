@@ -33,10 +33,35 @@ impl TaskRow {
     }
 }
 
-/// A project's tasks in display order, depth-first. Collapsed tasks hide their descendants. Unless
-/// `show_completed`, completed tasks (and so everything beneath them) are left out; when shown, they follow
-/// their open siblings, most recently completed first, as in Todoist.
-pub fn rows(tasks: &[Task], project: ProjectId, show_completed: bool) -> Vec<TaskRow> {
+/// A project's list: its outline of open tasks, and below it, when they're shown, its completed top-level
+/// tasks, as in Todoist. Both are depth-first, with each task's subtasks beneath it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Rows {
+    rows: Vec<TaskRow>,
+    completed_start: usize,
+}
+
+impl Rows {
+    /// Every row, the outline first.
+    pub fn all(&self) -> &[TaskRow] {
+        &self.rows
+    }
+
+    /// The open top-level tasks, with their subtasks: completed ones too, when shown.
+    pub fn outline(&self) -> &[TaskRow] {
+        &self.rows[..self.completed_start]
+    }
+
+    /// The completed top-level tasks, with their subtasks.
+    pub fn completed(&self) -> &[TaskRow] {
+        &self.rows[self.completed_start..]
+    }
+}
+
+/// A project's tasks in display order. Collapsed tasks hide their descendants. Unless `show_completed`,
+/// completed tasks (and so everything beneath them) are left out; when shown, they follow their open
+/// siblings, most recently completed first, and the top-level ones go below the outline.
+pub fn rows(tasks: &[Task], project: ProjectId, show_completed: bool) -> Rows {
     let in_project: Vec<&Task> = tasks.iter().filter(|t| t.project_id == project).collect();
     let mut visible: HashMap<Option<TaskId>, Vec<&Task>> = HashMap::new();
     let mut all: HashMap<TaskId, (usize, usize)> = HashMap::new();
@@ -54,31 +79,46 @@ pub fn rows(tasks: &[Task], project: ProjectId, show_completed: bool) -> Vec<Tas
         siblings.sort_by_key(|t| (t.is_completed(), Reverse(t.completed_at), t.position, t.id));
     }
 
-    fn append(
+    /// Pushes `task`'s row, then its subtasks' unless it's collapsed.
+    fn push(
         rows: &mut Vec<TaskRow>,
         visible: &HashMap<Option<TaskId>, Vec<&Task>>,
         all: &HashMap<TaskId, (usize, usize)>,
-        parent: Option<TaskId>,
+        task: &Task,
         depth: usize,
     ) {
-        for task in visible.get(&parent).into_iter().flatten() {
-            let (subtask_count, completed_subtask_count) =
-                all.get(&task.id).copied().unwrap_or_default();
-            rows.push(TaskRow {
-                task: (*task).clone(),
-                depth,
-                child_count: visible.get(&Some(task.id)).map_or(0, Vec::len),
-                subtask_count,
-                completed_subtask_count,
-            });
-            if !task.collapsed {
-                append(rows, visible, all, Some(task.id), depth + 1);
+        let (subtask_count, completed_subtask_count) =
+            all.get(&task.id).copied().unwrap_or_default();
+        let children = visible.get(&Some(task.id)).map_or(&[][..], Vec::as_slice);
+        rows.push(TaskRow {
+            task: task.clone(),
+            depth,
+            child_count: children.len(),
+            subtask_count,
+            completed_subtask_count,
+        });
+        if !task.collapsed {
+            for child in children {
+                push(rows, visible, all, child, depth + 1);
             }
         }
     }
-    let mut rows = Vec::new();
-    append(&mut rows, &visible, &all, None, 0);
-    rows
+    let mut outline = Vec::new();
+    let mut completed = Vec::new();
+    for root in visible.get(&None).into_iter().flatten() {
+        let section = if root.is_completed() {
+            &mut completed
+        } else {
+            &mut outline
+        };
+        push(section, &visible, &all, root, 0);
+    }
+    let completed_start = outline.len();
+    outline.append(&mut completed);
+    Rows {
+        rows: outline,
+        completed_start,
+    }
 }
 
 /// Each of `rows` with whether it goes when the ones that `remove` picks go, taking their subtasks with them.
@@ -152,6 +192,7 @@ mod tests {
 
     fn shown(tasks: &[Task], show_completed: bool) -> Vec<String> {
         rows(tasks, ProjectId(1), show_completed)
+            .all()
             .iter()
             .map(|r| format!("{}{}", " ".repeat(r.depth), r.task.name))
             .collect()
@@ -169,6 +210,8 @@ mod tests {
         ];
         assert_eq!(shown(&tasks, false), ["1", " 3"]);
         assert_eq!(shown(&tasks, true), ["1", " 3", " 2", "4", " 5", "6"]);
+        let rows = rows(&tasks, ProjectId(1), true);
+        assert_eq!((rows.outline().len(), rows.completed().len()), (3, 3));
     }
 
     #[test]
@@ -181,7 +224,7 @@ mod tests {
             task(5, None, None),
         ];
         let rows = rows(&tasks, ProjectId(1), false);
-        let removed: Vec<bool> = removing(&rows, |r| r.id() == TaskId(2))
+        let removed: Vec<bool> = removing(rows.all(), |r| r.id() == TaskId(2))
             .map(|(_, removed)| removed)
             .collect();
         assert_eq!(removed, [false, true, true, false, false]);

@@ -88,9 +88,9 @@ fn adding_keeps_the_composer_open_and_files_by_project() {
         !state.submit_composer(&typed("   "), "", inbox, None, &[]),
         "empty names aren't saved"
     );
-    // The composer sits at the end of the list.
+    // The composer sits at the end of the outline.
     assert!(matches!(
-        state.list_items().last(),
+        state.list_items().outline.last(),
         Some(ListItem::Composer { depth: 0, .. })
     ));
 }
@@ -156,7 +156,7 @@ fn subtask_composer_sits_after_the_parents_subtasks() {
     state.start_adding_subtask(None);
     let items = state.list_items();
     assert!(
-        matches!(items[2], ListItem::Composer { depth: 1, .. }),
+        matches!(items.outline[2], ListItem::Composer { depth: 1, .. }),
         "{items:?}"
     );
     let project = state.project;
@@ -178,7 +178,7 @@ fn the_overview_adds_subtasks_with_the_full_composer() {
     assert!(
         !state
             .list_items()
-            .iter()
+            .all()
             .any(|i| matches!(i, ListItem::Composer { .. })),
         "the composer is in the overview, not the list"
     );
@@ -297,12 +297,17 @@ fn completed_tasks_stay_out_of_the_outline() {
     state.toggle_completed(Some(ids[0]));
     state.set_show_completed(true);
     assert_eq!(shown(&state), ["B", "A"]);
-    assert_eq!(state.completed_start(), 1);
+    assert_eq!(state.outline().len(), 1);
 
     state.start_adding();
+    let items = state.list_items();
     assert!(
-        matches!(state.list_items()[1], ListItem::Composer { .. }),
+        matches!(items.outline[1], ListItem::Composer { .. }),
         "a new task is added at the end of the outline, above the completed ones"
+    );
+    assert!(
+        matches!(&items.completed[..], [ListItem::Task { row, index: 1 }] if row.id() == ids[0]),
+        "{items:?}"
     );
 
     let target = state.drop_target(&[ids[1]], 2, 0);
@@ -314,13 +319,40 @@ fn completed_tasks_stay_out_of_the_outline() {
 }
 
 #[test]
+fn the_composer_stays_with_a_completed_task() {
+    let mut state = state();
+    let ids = add_outline(&mut state, "A\nB");
+    state.toggle_completed(Some(ids[1]));
+    state.set_show_completed(true);
+
+    state.start_editing(Some(ids[1]));
+    let items = state.list_items();
+    assert!(
+        matches!(&items.completed[..], [ListItem::Composer { depth: 0, .. }]),
+        "{items:?}"
+    );
+
+    state.close_composer();
+    state.start_adding_subtask(Some(ids[1]));
+    let items = state.list_items();
+    assert_eq!(items.outline.len(), 1);
+    assert!(
+        matches!(
+            &items.completed[..],
+            [ListItem::Task { .. }, ListItem::Composer { depth: 1, .. }]
+        ),
+        "{items:?}"
+    );
+}
+
+#[test]
 fn nothing_is_dropped_among_completed_subtasks() {
     let mut state = state();
     let ids = add_outline(&mut state, "A\n A1\n A2\nB\nC");
     state.toggle_completed(Some(ids[1]));
     state.set_show_completed(true);
     assert_eq!(shown(&state), ["A", " A2", " A1", "B", "C"]);
-    assert_eq!(state.completed_start(), 5);
+    assert_eq!(state.outline().len(), 5);
     // C dropped below A1, one level in, goes after A2, the last open subtask.
     let target = state.drop_target(&[ids[4]], 3, 1);
     assert_eq!(

@@ -123,10 +123,24 @@ pub struct ProjectDraft {
     pub color: ProjectColor,
 }
 
-/// A row in the list: a task, or the composer where it belongs.
+/// The list as shown: the outline, which "Add task" follows, then the completed tasks.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ListItems {
+    pub outline: Vec<ListItem>,
+    pub completed: Vec<ListItem>,
+}
+
+impl ListItems {
+    /// Every item, the outline first.
+    pub fn all(&self) -> impl Iterator<Item = &ListItem> {
+        self.outline.iter().chain(&self.completed)
+    }
+}
+
+/// A row in the list: a task, with its index in [`AppState::rows`], or the composer where it belongs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListItem {
-    Task(TaskRow),
+    Task { row: TaskRow, index: usize },
     Composer { mode: Composer, depth: usize },
 }
 
@@ -192,7 +206,7 @@ struct Kept {
 pub struct AppState {
     repo: Repository,
     snapshot: Snapshot,
-    rows: Vec<TaskRow>,
+    rows: tree::Rows,
     clock: Box<dyn Fn() -> ZonedDateTime>,
 
     pub project: ProjectId,
@@ -239,7 +253,7 @@ impl AppState {
         let mut state = AppState {
             repo,
             snapshot: Snapshot::default(),
-            rows: Vec::new(),
+            rows: tree::Rows::default(),
             clock: Box::new(clock),
             project: ProjectId(0),
             show_completed: false,
@@ -291,68 +305,81 @@ impl AppState {
         tree::open_count(&self.snapshot.tasks, project)
     }
 
-    /// The current project's outline, then its completed tasks if they're being shown.
+    /// Every row in the list: the outline, then the completed tasks if they're being shown.
     pub fn rows(&self) -> &[TaskRow] {
-        &self.rows
+        self.rows.all()
     }
 
-    /// Where the completed top-level tasks start in [`Self::rows`], below the outline: its length when there
-    /// are none. Completed subtasks of open tasks stay in the outline, under their parents.
-    pub fn completed_start(&self) -> usize {
-        self.rows
-            .iter()
-            .position(|r| r.depth == 0 && r.task.is_completed())
-            .unwrap_or(self.rows.len())
+    /// The open top-level tasks and their subtasks, which "Add task" follows.
+    pub fn outline(&self) -> &[TaskRow] {
+        self.rows.outline()
     }
 
     fn row_index(&self, id: TaskId) -> Option<usize> {
-        self.rows.iter().position(|r| r.id() == id)
+        self.rows().iter().position(|r| r.id() == id)
     }
 
     pub fn is_in_list(&self, id: TaskId) -> bool {
         self.row_index(id).is_some()
     }
 
-    /// The rows with the composer spliced in where it belongs.
-    pub fn list_items(&self) -> Vec<ListItem> {
-        let mut items: Vec<ListItem> = self.rows.iter().cloned().map(ListItem::Task).collect();
-        match self.composer {
-            Composer::Closed | Composer::AddingInOverview { .. } => {}
-            Composer::Adding { parent: None } => items.insert(
-                self.completed_start(),
-                ListItem::Composer {
-                    mode: self.composer,
-                    depth: 0,
-                },
-            ),
-            Composer::Adding {
-                parent: Some(parent),
-            } => {
-                if let Some(index) = self.row_index(parent) {
-                    let depth = self.rows[index].depth;
-                    let end = self.rows[index + 1..]
-                        .iter()
-                        .position(|r| r.depth <= depth)
-                        .map_or(self.rows.len(), |offset| index + 1 + offset);
-                    items.insert(
-                        end,
-                        ListItem::Composer {
+    /// The rows with the composer spliced in where it belongs: a new task at the end of the outline, a new
+    /// subtask after its parent's last, and an edited task in its place.
+    pub fn list_items(&self) -> ListItems {
+        let section = |rows: &[TaskRow], start: usize| {
+            let mut items: Vec<ListItem> = rows
+                .iter()
+                .enumerate()
+                .map(|(i, row)| ListItem::Task {
+                    row: row.clone(),
+                    index: start + i,
+                })
+                .collect();
+            let position = |id: TaskId| rows.iter().position(|r| r.id() == id);
+            match self.composer {
+                Composer::Adding {
+                    parent: Some(parent),
+                } => {
+                    if let Some(index) = position(parent) {
+                        let depth = rows[index].depth;
+                        let end = rows[index + 1..]
+                            .iter()
+                            .position(|r| r.depth <= depth)
+                            .map_or(rows.len(), |offset| index + 1 + offset);
+                        items.insert(
+                            end,
+                            ListItem::Composer {
+                                mode: self.composer,
+                                depth: depth + 1,
+                            },
+                        );
+                    }
+                }
+                Composer::Editing { task } => {
+                    if let Some(index) = position(task) {
+                        items[index] = ListItem::Composer {
                             mode: self.composer,
-                            depth: depth + 1,
-                        },
-                    );
+                            depth: rows[index].depth,
+                        };
+                    }
                 }
+                Composer::Closed
+                | Composer::Adding { parent: None }
+                | Composer::AddingInOverview { .. } => {}
             }
-            Composer::Editing { task } => {
-                if let Some(index) = self.row_index(task) {
-                    items[index] = ListItem::Composer {
-                        mode: self.composer,
-                        depth: self.rows[index].depth,
-                    };
-                }
-            }
+            items
+        };
+        let mut outline = section(self.rows.outline(), 0);
+        if self.composer == (Composer::Adding { parent: None }) {
+            outline.push(ListItem::Composer {
+                mode: self.composer,
+                depth: 0,
+            });
         }
-        items
+        ListItems {
+            outline,
+            completed: section(self.rows.completed(), self.rows.outline().len()),
+        }
     }
 
     /// A task's direct subtasks, leaving out completed ones unless they're being shown.
@@ -375,7 +402,7 @@ impl AppState {
             return vec![id];
         }
         let ids: Vec<TaskId> = self
-            .rows
+            .rows()
             .iter()
             .map(TaskRow::id)
             .filter(|&id| self.selection.contains(id))
@@ -426,17 +453,17 @@ impl AppState {
     }
 
     pub fn move_selection(&mut self, offset: isize) {
-        if self.rows.is_empty() {
+        if self.rows().is_empty() {
             return;
         }
         let next = match self.selection.anchor().and_then(|a| self.row_index(a)) {
             None if offset > 0 => 0,
-            None => self.rows.len() - 1,
+            None => self.rows().len() - 1,
             Some(current) => current
                 .saturating_add_signed(offset)
-                .min(self.rows.len() - 1),
+                .min(self.rows().len() - 1),
         };
-        self.selection = Selection::single(self.rows[next].id());
+        self.selection = Selection::single(self.rows()[next].id());
     }
 
     /// ⌘-click: adds a task to the selection, or takes it out. Either way a Shift range being grown ends.
@@ -450,8 +477,8 @@ impl AppState {
             if anchor == Some(id) {
                 // Hand the keyboard to the nearest task still selected.
                 let index = self.row_index(id).unwrap_or(0);
-                let after = self.rows[index..].iter().find(|r| ids.contains(&r.id()));
-                let before = self.rows[..index]
+                let after = self.rows()[index..].iter().find(|r| ids.contains(&r.id()));
+                let before = self.rows()[..index]
                     .iter()
                     .rev()
                     .find(|r| ids.contains(&r.id()));
@@ -478,7 +505,7 @@ impl AppState {
             self.select_only(id);
             return;
         };
-        let ids = self.rows[start.min(end)..=start.max(end)]
+        let ids = self.rows()[start.min(end)..=start.max(end)]
             .iter()
             .map(TaskRow::id)
             .collect();
@@ -503,8 +530,8 @@ impl AppState {
         };
         let next = current
             .saturating_add_signed(offset)
-            .min(self.rows.len() - 1);
-        self.extend_selection_to(self.rows[next].id());
+            .min(self.rows().len() - 1);
+        self.extend_selection_to(self.rows()[next].id());
     }
 
     // Composer
@@ -705,7 +732,7 @@ impl AppState {
     /// The task `offset` rows from the open one, which the overview's arrows step to.
     pub fn overview_neighbour(&self, offset: isize) -> Option<TaskId> {
         let index = self.row_index(self.overview?)?;
-        self.rows
+        self.rows()
             .get(index.checked_add_signed(offset)?)
             .map(TaskRow::id)
     }
@@ -965,7 +992,7 @@ impl AppState {
     }
 
     /// Where `dragged` would land if dropped in the gap before row `gap` (after the outline's last row when
-    /// it is `completed_start()` or more), as near `depth` levels in as the outline allows: no deeper than a
+    /// it is `outline().len()` or more), as near `depth` levels in as the outline allows: no deeper than a
     /// subtask of the row above, and no shallower than the row below. The dragged tasks' own rows don't count,
     /// so any gap among them is the gap where they already are. Nor do completed tasks: nothing is placed
     /// among them.
@@ -973,7 +1000,7 @@ impl AppState {
         let dragged = self.topmost(dragged);
         let mut rows: Vec<&TaskRow> = Vec::new();
         let mut split = 0;
-        let remaining = tree::removing(&self.rows, |row| {
+        let remaining = tree::removing(self.rows.outline(), |row| {
             dragged.contains(&row.id()) || row.task.is_completed()
         });
         for (index, (row, removed)) in remaining.enumerate() {
@@ -1030,7 +1057,7 @@ impl AppState {
             .selection
             .anchor()
             .and_then(|a| self.row_index(a))
-            .map(|i| self.rows[i].clone())
+            .map(|i| self.rows()[i].clone())
         else {
             return;
         };
@@ -1365,7 +1392,7 @@ impl AppState {
                 .collect();
             let new_end = range_end.and_then(|e| shown_instead(self, e));
             let new_anchor = shown_instead(self, *anchor).or_else(|| {
-                self.rows
+                self.rows()
                     .iter()
                     .map(TaskRow::id)
                     .find(|id| new_ids.contains(id))
@@ -1509,7 +1536,7 @@ impl AppState {
     /// selection should go — the first row left after the anchor, or the last before it. `None` when the
     /// selection isn't affected.
     fn selection_after_removing(&self, ids: &[TaskId]) -> Option<Option<TaskId>> {
-        let removed: BTreeSet<TaskId> = tree::removing(&self.rows, |row| ids.contains(&row.id()))
+        let removed: BTreeSet<TaskId> = tree::removing(self.rows(), |row| ids.contains(&row.id()))
             .filter(|&(_, removed)| removed)
             .map(|(row, _)| row.id())
             .collect();
@@ -1517,10 +1544,10 @@ impl AppState {
             return None;
         }
         let index = self.selection.anchor().and_then(|a| self.row_index(a))?;
-        let after = self.rows[index..]
+        let after = self.rows()[index..]
             .iter()
             .find(|r| !removed.contains(&r.id()));
-        let before = self.rows[..index]
+        let before = self.rows()[..index]
             .iter()
             .rev()
             .find(|r| !removed.contains(&r.id()));
