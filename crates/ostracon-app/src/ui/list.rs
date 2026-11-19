@@ -6,6 +6,7 @@ use std::time::Duration;
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
+use gpui_kit::component::text::TextView;
 use gpui_kit::component::{Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -555,14 +556,21 @@ impl Workspace {
                                     .child(task.name.clone()),
                             )
                             .when_some(description, |d, text| {
+                                // Its first line, rendered as Markdown and cut to one row. It isn't selectable, so
+                                // a click or drag on it reaches the row; a link still opens.
                                 d.child(
                                     div()
                                         .text_size(px(META_TEXT))
                                         .text_color(palette.muted)
                                         .overflow_hidden()
-                                        .text_ellipsis()
-                                        .whitespace_nowrap()
-                                        .child(text),
+                                        .child(
+                                            TextView::markdown(
+                                                ("task-description", id.0 as usize),
+                                                text,
+                                            )
+                                            .selectable(false)
+                                            .max_lines(1),
+                                        ),
                                 )
                             })
                             .when(!meta.is_empty(), |d| {

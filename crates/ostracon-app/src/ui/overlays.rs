@@ -4,6 +4,7 @@ use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
+use gpui_kit::component::text::TextView;
 use gpui_kit::component::{Disableable as _, Icon, Sizable as _, Size};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -357,7 +358,15 @@ impl Workspace {
                                                 .debug_selector(|| {
                                                     "overview-description-text".into()
                                                 })
-                                                .child(task.description.clone()),
+                                                // Not selectable, so a click opens the editor, as in
+                                                // Todoist; a link still opens.
+                                                .child(
+                                                    TextView::markdown(
+                                                        "overview-description-markdown",
+                                                        task.description.clone(),
+                                                    )
+                                                    .selectable(false),
+                                                ),
                                         )
                                     })
                                     .child({
