@@ -1,7 +1,7 @@
 //! The window's root view. It owns the [`AppState`] and turns its state types into views: after every change
 //! [`Workspace::sync`] creates or drops the composer, overview and dialog inputs so they match the state.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
@@ -14,6 +14,7 @@ use ostracon_core::{ProjectColor, TaskId};
 
 use super::actions::*;
 use super::composer::{ComposerEvent, ComposerSeed, ComposerView};
+use super::list::DescriptionViews;
 use super::overlays::{DESCRIPTION_LINE, DESCRIPTION_MAX_ROWS, DESCRIPTION_PAD_Y};
 use super::pickers::{DatePicker, PickerEvent, ReminderEditor};
 use super::quick_add::{QuickAddEvent, QuickAddInput};
@@ -121,6 +122,8 @@ pub struct Workspace {
     pub autoscrolling: bool,
     pub toast_timer: Option<(u64, Task<()>)>,
     pub sidebar_scroll: ScrollHandle,
+    /// The task rows' description views, which the list keeps from one frame to the next.
+    pub descriptions: RefCell<DescriptionViews>,
     _tasks: Vec<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
@@ -151,6 +154,7 @@ impl Workspace {
             autoscrolling: false,
             toast_timer: None,
             sidebar_scroll: ScrollHandle::new(),
+            descriptions: RefCell::default(),
             _tasks: Vec::new(),
             _subscriptions: Vec::new(),
         };

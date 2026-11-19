@@ -796,6 +796,39 @@ fn an_overview_description_lines_up_with_the_name(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn a_row_ends_its_description_in_an_ellipsis_only_when_it_is_cut_short(cx: &mut TestAppContext) {
+    let (workspace, cx) = open(cx, |repo| {
+        for (name, description) in [
+            ("Short", "Notes".to_owned()),
+            (
+                "Long",
+                "A description much too long for one row. ".repeat(20),
+            ),
+        ] {
+            repo.add_task(NewTask {
+                name: name.into(),
+                description,
+                ..Default::default()
+            })
+            .unwrap();
+        }
+    });
+    let ids = workspace.read_with(cx, |w, _| {
+        w.state
+            .rows()
+            .iter()
+            .map(|r| r.task.id.0)
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(ids, [1, 2]);
+    // The view only knows it cut the text short once it has been drawn.
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert_eq!(cx.debug_bounds("task-description-ellipsis-1"), None);
+    assert!(cx.debug_bounds("task-description-ellipsis-2").is_some());
+}
+
+#[gpui_kit::test]
 fn the_overview_editor_shows_the_description_icon_only_while_it_is_empty(cx: &mut TestAppContext) {
     use gpui_kit::test::TestWindowExt as _;
     let (_workspace, cx) = open(cx, |repo| {

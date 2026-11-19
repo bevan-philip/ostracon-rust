@@ -2,12 +2,14 @@
 //! chevrons hanging in the left margin, and the composer inline where it belongs. Today's has no outline: its
 //! overdue tasks and today's go under headings, each with its project.
 
+use std::collections::HashMap;
+use std::mem;
 use std::time::Duration;
 
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
-use gpui_kit::component::text::TextView;
+use gpui_kit::component::text::{TextView, TextViewState};
 use gpui_kit::component::{Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -25,6 +27,32 @@ use crate::state::{AppState, DropTarget, ListItem, View};
 const GUTTER: f32 = 40.;
 const MAX_WIDTH: f32 = 820.;
 
+/// The rows' description views, kept from one frame to the next so each can tell its row whether it cut the
+/// text short. A frame keeps only the views it drew.
+#[derive(Default)]
+pub struct DescriptionViews {
+    previous: HashMap<TaskId, Entity<TextViewState>>,
+    current: HashMap<TaskId, Entity<TextViewState>>,
+}
+
+impl DescriptionViews {
+    fn start_frame(&mut self) {
+        self.previous = mem::take(&mut self.current);
+    }
+
+    fn view(&mut self, id: TaskId, text: &str, cx: &mut App) -> Entity<TextViewState> {
+        let view = match self.previous.remove(&id) {
+            Some(view) => {
+                view.update(cx, |v, cx| v.set_text(text, cx));
+                view
+            }
+            None => cx.new(|cx| TextViewState::markdown(text, cx)),
+        };
+        self.current.insert(id, view.clone());
+        view
+    }
+}
+
 impl Workspace {
     pub fn render_list(&mut self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let palette = theme::palette(cx);
@@ -35,6 +63,7 @@ impl Workspace {
         let outline_len = self.state.outline().len();
         let drop = self.drop_target(cx);
         let today = self.state.view == View::Today;
+        self.descriptions.get_mut().start_frame();
 
         // Open tasks, with "Add task" after them, then completed ones, as in Todoist. Today puts the overdue
         // ones first, and when there are any, heads both sections.
@@ -529,12 +558,16 @@ impl Workspace {
             );
         }
 
-        let description = task
-            .description
-            .lines()
-            .next()
-            .map(str::to_owned)
-            .filter(|d| !d.is_empty());
+        // Its first line, with an ellipsis when more lines follow.
+        let mut lines = task.description.lines();
+        let description = lines.next().filter(|d| !d.is_empty()).map(|first| {
+            let text = if lines.any(|l| !l.trim().is_empty()) {
+                format!("{first} …")
+            } else {
+                first.to_owned()
+            };
+            self.descriptions.borrow_mut().view(id, &text, cx)
+        });
         let drag = {
             let ids = self.state.acting_on(Some(id));
             let label: SharedString = if ids.len() > 1 {
@@ -620,22 +653,32 @@ impl Workspace {
                                     .when(completed, |d| d.line_through())
                                     .child(task.name.clone()),
                             )
-                            .when_some(description, |d, text| {
-                                // Its first line, rendered as Markdown and cut to one row. It isn't selectable, so
-                                // a click or drag on it reaches the row; a link still opens.
+                            .when_some(description, |d, view| {
+                                // Rendered as Markdown and cut to one row, which ends in an ellipsis when it is too
+                                // long for it. The view says whether it cut the last frame short. It isn't
+                                // selectable, so a click or drag on it reaches the row; a link still opens.
+                                let clamped = view.read(cx).is_clamped();
                                 d.child(
                                     div()
+                                        .flex()
                                         .text_size(px(META_TEXT))
                                         .text_color(palette.muted)
-                                        .overflow_hidden()
-                                        .child(
-                                            TextView::markdown(
-                                                ("task-description", id.0 as usize),
-                                                text,
+                                        .child(div().flex_1().min_w_0().overflow_hidden().child(
+                                            TextView::new(&view).selectable(false).max_lines(1),
+                                        ))
+                                        .when(clamped, |d| {
+                                            d.child(
+                                                div()
+                                                    .flex_none()
+                                                    .debug_selector(move || {
+                                                        format!(
+                                                            "task-description-ellipsis-{}",
+                                                            id.0
+                                                        )
+                                                    })
+                                                    .child("…"),
                                             )
-                                            .selectable(false)
-                                            .max_lines(1),
-                                        ),
+                                        }),
                                 )
                             })
                             .when(!meta.is_empty(), |d| {
