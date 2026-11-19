@@ -130,6 +130,16 @@ pub enum ListItem {
     Composer { mode: Composer, depth: usize },
 }
 
+/// Where dragged tasks would land: under `parent`, straight after its subtask `after` (first when `None`). The
+/// list shows it as a line above the row `before` (below the last row when `None`), `depth` levels in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DropTarget {
+    pub before: Option<TaskId>,
+    pub depth: usize,
+    pub parent: Option<TaskId>,
+    pub after: Option<TaskId>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Toast {
     /// Distinguishes toasts, so a timer only dismisses the one it was started for.
@@ -940,6 +950,64 @@ impl AppState {
         };
         self.show_toast(format!("{what} moved to {name}"), None);
         true
+    }
+
+    /// Where `dragged` would land if dropped in the gap before row `gap` (after the last row when it is
+    /// `rows().len()`), as near `depth` levels in as the outline allows: no deeper than a subtask of the row
+    /// above, and no shallower than the row below. The dragged tasks' own rows don't count, so any gap among
+    /// them is the gap where they already are.
+    pub fn drop_target(&self, dragged: &[TaskId], gap: usize, depth: isize) -> DropTarget {
+        let dragged = self.topmost(dragged);
+        let mut rows: Vec<&TaskRow> = Vec::new();
+        let mut split = 0;
+        let mut skipping_below: Option<usize> = None;
+        for (index, row) in self.rows.iter().enumerate() {
+            if skipping_below.is_some_and(|depth| row.depth > depth) {
+                continue;
+            }
+            skipping_below = None;
+            if dragged.contains(&row.id()) {
+                skipping_below = Some(row.depth);
+                continue;
+            }
+            rows.push(row);
+            if index < gap {
+                split = rows.len();
+            }
+        }
+        let (above, below) = (&rows[..split], rows.get(split));
+        let deepest = above.last().map_or(0, |r| r.depth + 1);
+        let shallowest = below.map_or(0, |r| r.depth);
+        let depth = usize::try_from(depth)
+            .unwrap_or(0)
+            .max(shallowest)
+            .min(deepest);
+        let (parent, after) = match above.last() {
+            Some(row) if depth > row.depth => (Some(row.id()), None),
+            _ => match above.iter().rev().find(|r| r.depth == depth) {
+                Some(sibling) => (sibling.task.parent_id, Some(sibling.id())),
+                None => (None, None),
+            },
+        };
+        DropTarget {
+            before: below.map(|r| r.id()),
+            depth,
+            parent,
+            after,
+        }
+    }
+
+    /// Drops dragged tasks, with their subtasks, where `target` says.
+    pub fn drop_tasks(&mut self, dragged: &[TaskId], target: DropTarget) {
+        let ids = self.topmost(dragged);
+        if ids.is_empty() {
+            return;
+        }
+        let project = target
+            .parent
+            .and_then(|p| self.task(p))
+            .map_or(self.project, |p| p.project_id);
+        self.perform(|repo| repo.place(&ids, project, target.parent, target.after));
     }
 
     pub fn set_collapsed(&mut self, id: TaskId, collapsed: bool) {

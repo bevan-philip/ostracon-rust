@@ -1,6 +1,8 @@
 use jiff::ZonedDateTime;
 use jiff::civil::{date, time};
-use ostracon_app::state::{AppState, Composer, Dialog, ListItem, ProjectDraft, Selection, Undo};
+use ostracon_app::state::{
+    AppState, Composer, Dialog, DropTarget, ListItem, ProjectDraft, Selection, Undo,
+};
 use ostracon_core::quickadd::Draft;
 use ostracon_core::{Due, NewTask, ProjectColor, ProjectId, Repository, TaskId};
 
@@ -318,6 +320,34 @@ fn outlining_through_the_state() {
     state.outdent(None);
     state.move_by(None, -1);
     assert_eq!(shown(&state), ["B", "A"]);
+}
+
+#[test]
+fn drop_targets_follow_the_outline() {
+    let mut state = state();
+    let ids = add_outline(&mut state, "A\n A1\n  A2\nB\nC");
+    let [a, a1, a2, b, c] = ids[..] else {
+        unreachable!()
+    };
+    let target = |state: &AppState, dragged, gap, depth| {
+        let t: DropTarget = state.drop_target(&[dragged], gap, depth);
+        (t.before, t.depth, t.parent, t.after)
+    };
+    // Below A2 and above B: anywhere from the top level to a subtask of A2.
+    assert_eq!(target(&state, c, 3, -1), (Some(b), 0, None, Some(a)));
+    assert_eq!(target(&state, c, 3, 1), (Some(b), 1, Some(a), Some(a1)));
+    assert_eq!(target(&state, c, 3, 9), (Some(b), 3, Some(a2), None));
+    // Above A1 it must be a subtask of A, as A1 is.
+    assert_eq!(target(&state, c, 1, 0), (Some(a1), 1, Some(a), None));
+    assert_eq!(target(&state, b, 0, 4), (Some(a), 0, None, None));
+    // Dragging A, its own subtree is left out: the gaps inside it are the gap before B.
+    assert_eq!(target(&state, a, 2, 1), (Some(b), 0, None, None));
+    assert_eq!(target(&state, a, 5, 0), (None, 0, None, Some(c)));
+
+    state.drop_tasks(&[c], state.drop_target(&[c], 3, 1));
+    assert_eq!(shown(&state), ["A", " A1", "  A2", " C", "B"]);
+    state.drop_tasks(&[a], state.drop_target(&[a], 5, 0));
+    assert_eq!(shown(&state), ["B", "A", " A1", "  A2", " C"]);
 }
 
 #[test]
