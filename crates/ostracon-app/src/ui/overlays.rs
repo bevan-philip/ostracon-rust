@@ -4,7 +4,7 @@ use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_kit::component::{Disableable as _, Icon, Sizable as _};
+use gpui_kit::component::{Disableable as _, Icon, Sizable as _, Size};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use jiff::ZonedDateTime;
@@ -642,6 +642,7 @@ impl Workspace {
         palette: &Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let empty = description.read(cx).value().is_empty();
         div()
             .flex_1()
             .min_w_0()
@@ -666,14 +667,36 @@ impl Workspace {
                                 .child(deferred(anchored().child(s)).with_priority(2)),
                         )
                     })
-                    // No padding of its own, so the description starts where the name does.
+                    // As outside the editor, the icon marks only an empty description, and a description
+                    // starts where the name does.
                     .child(
-                        Textarea::new(&description)
-                            .appearance(false)
-                            .small()
-                            .px_0()
-                            .text_size(px(14.))
-                            .text_color(palette.muted),
+                        div()
+                            .flex()
+                            .items_start()
+                            .gap_2()
+                            .when(empty, |d| {
+                                d.child(
+                                    div()
+                                        .flex_none()
+                                        .mt(px(5.))
+                                        .debug_selector(|| "overview-editor-icon".into())
+                                        .child(
+                                            Icon::new(Lucide::TextAlignStart)
+                                                .small()
+                                                .text_color(palette.faint),
+                                        ),
+                                )
+                            })
+                            .child(
+                                // A multi-line input pads its text inside, whatever its own padding says.
+                                div().flex_1().min_w_0().ml(-Size::Small.input_px()).child(
+                                    Textarea::new(&description)
+                                        .appearance(false)
+                                        .small()
+                                        .text_size(px(14.))
+                                        .text_color(palette.muted),
+                                ),
+                            ),
                     ),
             )
             .child(

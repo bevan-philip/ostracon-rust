@@ -698,3 +698,29 @@ fn an_overview_description_lines_up_with_the_name(cx: &mut TestAppContext) {
         .expect("description");
     assert_eq!(text.left(), name.left() + gpui_kit::px(8.));
 }
+
+#[gpui_kit::test]
+fn the_overview_editor_shows_the_description_icon_only_while_it_is_empty(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let (_workspace, cx) = open(cx, |repo| {
+        repo.add_task(NewTask {
+            name: "A".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    });
+    cx.simulate_keystrokes("j secondary-o");
+    cx.run_until_parked();
+    cx.update(|window, cx| window.click("overview-description", cx));
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("overview-editor-icon").is_some());
+    cx.simulate_input("N");
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("overview-editor-icon").is_none());
+    cx.simulate_keystrokes("backspace");
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds("overview-editor-icon").is_some(),
+        "it comes back once the description is empty again"
+    );
+}

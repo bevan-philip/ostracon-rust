@@ -391,6 +391,12 @@ impl Workspace {
                 QuickAddEvent::Cancel => this.act(window, cx, AppState::cancel_editing_overview),
                 QuickAddEvent::Changed => cx.notify(),
             }),
+            // The description's icon shows only while it is empty.
+            cx.subscribe_in(&description, window, |_, _, event, _, cx| {
+                if let InputEvent::Change = event {
+                    cx.notify();
+                }
+            }),
         ];
         window.focus(&name.focus_handle(cx), cx);
         Some(OverviewEditor {
