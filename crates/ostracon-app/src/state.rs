@@ -296,11 +296,12 @@ impl AppState {
         &self.rows
     }
 
-    /// Where the completed tasks start in [`Self::rows`]: its length when there are none.
+    /// Where the completed top-level tasks start in [`Self::rows`], below the outline: its length when there
+    /// are none. Completed subtasks of open tasks stay in the outline, under their parents.
     pub fn completed_start(&self) -> usize {
         self.rows
             .iter()
-            .position(|r| r.task.is_completed())
+            .position(|r| r.depth == 0 && r.task.is_completed())
             .unwrap_or(self.rows.len())
     }
 
@@ -966,18 +967,19 @@ impl AppState {
     /// Where `dragged` would land if dropped in the gap before row `gap` (after the outline's last row when
     /// it is `completed_start()` or more), as near `depth` levels in as the outline allows: no deeper than a
     /// subtask of the row above, and no shallower than the row below. The dragged tasks' own rows don't count,
-    /// so any gap among them is the gap where they already are. Completed tasks aren't part of the outline.
+    /// so any gap among them is the gap where they already are. Nor do completed tasks: nothing is placed
+    /// among them.
     pub fn drop_target(&self, dragged: &[TaskId], gap: usize, depth: isize) -> DropTarget {
         let dragged = self.topmost(dragged);
         let mut rows: Vec<&TaskRow> = Vec::new();
         let mut split = 0;
         let mut skipping_below: Option<usize> = None;
-        for (index, row) in self.rows[..self.completed_start()].iter().enumerate() {
+        for (index, row) in self.rows.iter().enumerate() {
             if skipping_below.is_some_and(|depth| row.depth > depth) {
                 continue;
             }
             skipping_below = None;
-            if dragged.contains(&row.id()) {
+            if dragged.contains(&row.id()) || row.task.is_completed() {
                 skipping_below = Some(row.depth);
                 continue;
             }

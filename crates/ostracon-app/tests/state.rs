@@ -314,6 +314,22 @@ fn completed_tasks_stay_out_of_the_outline() {
 }
 
 #[test]
+fn nothing_is_dropped_among_completed_subtasks() {
+    let mut state = state();
+    let ids = add_outline(&mut state, "A\n A1\n A2\nB\nC");
+    state.toggle_completed(Some(ids[1]));
+    state.set_show_completed(true);
+    assert_eq!(shown(&state), ["A", " A2", " A1", "B", "C"]);
+    assert_eq!(state.completed_start(), 5);
+    // C dropped below A1, one level in, goes after A2, the last open subtask.
+    let target = state.drop_target(&[ids[4]], 3, 1);
+    assert_eq!(
+        (target.before, target.parent, target.after),
+        (Some(ids[3]), Some(ids[0]), Some(ids[2]))
+    );
+}
+
+#[test]
 fn collapsing_hands_the_selection_to_the_parent() {
     let mut state = state();
     let ids = add_outline(&mut state, "A\n B\n  C");
