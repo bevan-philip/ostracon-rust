@@ -138,6 +138,7 @@ claude mcp add ostracon -- /Applications/Ostracon.app/Contents/MacOS/ostracon-mc
 | | Backspace after a block | Turn the block back into text |
 | | Esc | Close |
 | Overview | ↑ ↓ | Previous or next task |
+| | Return or ⌘E, or click the name | Edit the name and description; Return saves, Esc cancels |
 
 On Windows and Linux, Ctrl takes the place of ⌘ and Alt of ⌥.
 

@@ -86,10 +86,12 @@ pub fn bind_keys(cx: &mut App) {
         key("backspace", Delete, Some(LIST), cx),
         key("delete", Delete, Some(LIST), cx),
         key("escape", Escape, Some(LIST), cx),
-        // Modal layers: the overview steps between tasks, dialogs confirm and cancel.
+        // Modal layers: the overview steps between tasks and edits its own, dialogs confirm and cancel.
         key("escape", Escape, Some("Modal"), cx),
         key("up", SelectPrevious, Some("Overview && !Input"), cx),
         key("down", SelectNext, Some("Overview && !Input"), cx),
+        key("enter", Edit, Some("Overview && !Input"), cx),
+        key("secondary-e", Edit, Some("Overview && !Input"), cx),
         key("enter", Confirm, Some("Dialog && !Input"), cx),
     ];
     cx.bind_keys(bindings);

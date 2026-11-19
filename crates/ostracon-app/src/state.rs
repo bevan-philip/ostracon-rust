@@ -112,8 +112,9 @@ pub enum Dialog {
     ProjectEditor(ProjectDraft),
     ConfirmDeleteTasks(Vec<TaskId>),
     ConfirmDeleteProject(ProjectId),
-    /// Discarding what's unsaved in the list's composer, to open the overview of the task clicked.
-    ConfirmDiscard(TaskId),
+    /// Discarding what's unsaved in the list's composer or the overview's editor, to open the overview of a
+    /// task, or to close the overview when `None`.
+    ConfirmDiscard(Option<TaskId>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -215,6 +216,8 @@ pub struct AppState {
     pub composer: Composer,
     /// The task whose overview is open.
     pub overview: Option<TaskId>,
+    /// Whether the overview's name and description are open for editing. As in Todoist, only Save writes them.
+    pub overview_editing: bool,
     /// Tasks moved to another project from the overview, as in Todoist. They and their subtasks keep their
     /// place in the list until the overview closes, so the list doesn't shift under it and stepping away and
     /// back finds them where they were.
@@ -260,6 +263,7 @@ impl AppState {
             selection: Selection::Empty,
             composer: Composer::Closed,
             overview: None,
+            overview_editing: false,
             kept: Vec::new(),
             dialog: Dialog::None,
             toast: None,
@@ -692,6 +696,7 @@ impl AppState {
             return;
         }
         self.composer = Composer::Closed;
+        self.overview_editing = false;
         // A subtask hidden in the list would hand the selection to its parent; leave the selection be.
         if self.is_in_list(id) {
             self.selection = Selection::single(id);
@@ -702,6 +707,7 @@ impl AppState {
     /// Closes the overview. Tasks it kept in the list leave it now, handing on the selection as a move would.
     pub fn close_overview(&mut self) {
         self.overview = None;
+        self.overview_editing = false;
         if matches!(self.composer, Composer::AddingInOverview { .. }) {
             self.composer = Composer::Closed;
         }
@@ -737,10 +743,36 @@ impl AppState {
             .map(TaskRow::id)
     }
 
-    /// Saves the overview's name and description. As in the composer, a project, date or reminder written in
-    /// the name is set and taken out of it: a project moves the task (keeping it in the list), a date replaces
+    /// Opens the overview's name and description for editing.
+    pub fn start_editing_overview(&mut self) {
+        self.overview_editing = self.overview.is_some();
+    }
+
+    /// Closes the overview's editor, throwing away what was typed into it.
+    pub fn cancel_editing_overview(&mut self) {
+        self.overview_editing = false;
+    }
+
+    /// Leaving the overview's task, for `next` or to close the overview, while its editor holds unsaved
+    /// changes: asks before throwing them away.
+    pub fn request_discard_to_leave_overview(&mut self, next: Option<TaskId>) {
+        if self.overview_editing {
+            self.dialog = Dialog::ConfirmDiscard(next);
+        }
+    }
+
+    /// Saves the overview's name and description and closes its editor. As in the composer, a project, date or
+    /// reminder written in the name is set: a project moves the task (keeping it in the list), a date replaces
     /// the due date and reminders add to the task's. An empty name keeps the old one. Returns whether it saved.
     pub fn save_overview(&mut self, id: TaskId, name: &Draft, description: &str) -> bool {
+        let saved = self.write_overview(id, name, description);
+        if saved {
+            self.overview_editing = false;
+        }
+        saved
+    }
+
+    fn write_overview(&mut self, id: TaskId, name: &Draft, description: &str) -> bool {
         let parsed = self.composer_result(name);
         let Some(task) = self.task(id).cloned() else {
             return false;
@@ -1139,7 +1171,7 @@ impl AppState {
     /// A click on a task while the list's composer holds unsaved changes: asks before throwing them away.
     pub fn request_discard_to_open(&mut self, id: TaskId) {
         if self.composer.is_in_list() && self.is_in_list(id) {
-            self.dialog = Dialog::ConfirmDiscard(id);
+            self.dialog = Dialog::ConfirmDiscard(Some(id));
         }
     }
 
@@ -1190,10 +1222,11 @@ impl AppState {
             Dialog::ConfirmDeleteProject(id) => {
                 self.perform(|repo| repo.delete_project(id).map(drop));
             }
-            Dialog::ConfirmDiscard(id) => {
+            Dialog::ConfirmDiscard(Some(id)) => {
                 self.select_only(id);
                 self.open_overview(id);
             }
+            Dialog::ConfirmDiscard(None) => self.dismiss_overview(),
             other => self.dialog = other,
         }
     }
@@ -1358,8 +1391,9 @@ impl AppState {
     /// - Selected tasks are rows in the list; one that left it hands its place to the collapsed parent hiding
     ///   it, as in Finder, or leaves the selection.
     /// - The composer edits, or adds a subtask to, a task that is a row, or adds one to the overview's task.
-    /// - The overview and dialogs refer to projects and tasks that still exist, and a discard dialog to a task
-    ///   that is a row while the composer is still open in the list.
+    /// - The overview and dialogs refer to projects and tasks that still exist, and its editor is open only
+    ///   with it. A discard dialog stays while there is still something to discard: the overview's editor, or
+    ///   the composer in the list with the task to open still a row.
     pub fn reconcile(&mut self) {
         if self.current_project().is_none()
             && let Some(inbox) = self.snapshot.inbox()
@@ -1438,7 +1472,13 @@ impl AppState {
                 .project
                 .is_some_and(|id| self.project_by_id(id).is_none()),
             Dialog::ConfirmDeleteProject(id) => self.project_by_id(*id).is_none(),
-            Dialog::ConfirmDiscard(id) => !self.composer.is_in_list() || !self.is_in_list(*id),
+            // The overview's editor can open a task hidden in the list, such as a collapsed task's subtask.
+            Dialog::ConfirmDiscard(next) if self.overview_editing => {
+                next.is_some_and(|id| self.task(id).is_none())
+            }
+            Dialog::ConfirmDiscard(next) => {
+                !self.composer.is_in_list() || next.is_none_or(|id| !self.is_in_list(id))
+            }
             Dialog::ConfirmDeleteTasks(ids) => {
                 let remaining: Vec<TaskId> = ids
                     .iter()

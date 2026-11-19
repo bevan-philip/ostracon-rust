@@ -483,7 +483,7 @@ fn deleting_from_the_overview(cx: &mut TestAppContext) {
 
 #[gpui_kit::test]
 fn the_overview_name_reads_a_project_typed_into_it(cx: &mut TestAppContext) {
-    use gpui_kit::Focusable as _;
+    use gpui_kit::test::TestWindowExt as _;
     let (workspace, cx) = open(cx, |repo| {
         repo.create_project("Garden", ProjectColor::Green).unwrap();
         for name in ["A", "B"] {
@@ -496,10 +496,8 @@ fn the_overview_name_reads_a_project_typed_into_it(cx: &mut TestAppContext) {
     });
     cx.simulate_keystrokes("j secondary-o");
     cx.run_until_parked();
-    cx.update(|window, cx| {
-        let name = workspace.read(cx).overview.as_ref().unwrap().name.clone();
-        window.focus(&name.focus_handle(cx), cx);
-    });
+    cx.update(|window, cx| window.click("overview-name", cx));
+    cx.run_until_parked();
     cx.simulate_keystrokes("end");
     cx.simulate_input(" two #Garden ");
     cx.simulate_keystrokes("enter");
@@ -522,16 +520,10 @@ fn the_overview_name_reads_a_project_typed_into_it(cx: &mut TestAppContext) {
         ["A two", "B"],
         "it stays in the list"
     );
-    let shown = workspace.read_with(cx, |w, cx| {
-        w.overview
-            .as_ref()
-            .unwrap()
-            .name
-            .read(cx)
-            .draft()
-            .plain_text()
-    });
-    assert_eq!(shown, "A two", "the project leaves the name");
+    assert!(
+        workspace.read_with(cx, |w, _| w.overview.as_ref().unwrap().editor.is_none()),
+        "Return saves and closes the editor"
+    );
 
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
@@ -567,4 +559,119 @@ fn overview_side_values_sit_flush_with_their_labels(cx: &mut TestAppContext) {
         let value = cx.debug_bounds(value).expect(value);
         assert_eq!(value.left(), label.left(), "{value:?} under {label:?}");
     }
+}
+
+#[gpui_kit::test]
+fn the_overview_edits_only_on_save(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let (workspace, cx) = open(cx, |repo| {
+        repo.add_task(NewTask {
+            name: "A".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    });
+    let name = |workspace: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        workspace.read_with(cx, |w, _| w.state.rows()[0].task.name.clone())
+    };
+    let editing = |workspace: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        workspace.read_with(cx, |w, _| w.overview.as_ref().unwrap().editor.is_some())
+    };
+    cx.simulate_keystrokes("j secondary-o");
+    cx.run_until_parked();
+    assert!(
+        !editing(&workspace, cx),
+        "it opens showing the name, not editing it"
+    );
+
+    // Cancel throws the edit away.
+    cx.update(|window, cx| window.click("overview-name", cx));
+    cx.run_until_parked();
+    assert!(editing(&workspace, cx));
+    cx.simulate_keystrokes("end");
+    cx.simulate_input(" two");
+    cx.update(|window, cx| window.click("overview-cancel", cx));
+    cx.run_until_parked();
+    assert!(!editing(&workspace, cx));
+    assert_eq!(name(&workspace, cx), "A");
+
+    // So does Esc, and the overview stays open for the next.
+    cx.simulate_keystrokes("enter end");
+    cx.simulate_input(" two");
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(name(&workspace, cx), "A");
+    assert!(workspace.read_with(cx, |w, _| w.state.overview.is_some()));
+
+    // Save writes it.
+    cx.update(|window, cx| window.click("overview-description", cx));
+    cx.run_until_parked();
+    cx.simulate_input("Notes");
+    cx.update(|window, cx| window.click("overview-save", cx));
+    cx.run_until_parked();
+    assert!(!editing(&workspace, cx));
+    assert_eq!(
+        workspace.read_with(cx, |w, _| w.state.rows()[0].task.description.clone()),
+        "Notes"
+    );
+}
+
+#[gpui_kit::test]
+fn closing_the_overview_asks_before_discarding_an_edit(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let (workspace, cx) = open(cx, |repo| {
+        for name in ["A", "B"] {
+            repo.add_task(NewTask {
+                name: name.into(),
+                ..Default::default()
+            })
+            .unwrap();
+        }
+    });
+    cx.simulate_keystrokes("j secondary-o");
+    cx.run_until_parked();
+    cx.update(|window, cx| window.click("overview-name", cx));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("end");
+    cx.simulate_input(" two");
+
+    cx.update(|window, cx| window.click("overview-close", cx));
+    cx.run_until_parked();
+    assert_eq!(
+        workspace.read_with(cx, |w, _| w.state.dialog.clone()),
+        Dialog::ConfirmDiscard(None)
+    );
+    // Esc goes back to the edit, which is still there to save.
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(
+        workspace.read_with(cx, |w, _| w.state.dialog.clone()),
+        Dialog::None
+    );
+    cx.simulate_input("!");
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["A two!", "B"]);
+
+    // Stepping away from an unsaved edit asks too; discarding moves on without it.
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input("?");
+    cx.update(|window, cx| window.click("overview-next", cx));
+    cx.run_until_parked();
+    let b = workspace.read_with(cx, |w, _| w.state.rows()[1].task.id);
+    assert_eq!(
+        workspace.read_with(cx, |w, _| w.state.dialog.clone()),
+        Dialog::ConfirmDiscard(Some(b))
+    );
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert_eq!(workspace.read_with(cx, |w, _| w.state.overview), Some(b));
+    assert_eq!(names(&workspace, cx), ["A two!", "B"]);
+
+    // Without changes, it closes straight away.
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    cx.update(|window, cx| window.click("overview-close", cx));
+    cx.run_until_parked();
+    assert_eq!(workspace.read_with(cx, |w, _| w.state.overview), None);
 }

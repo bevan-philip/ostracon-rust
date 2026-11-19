@@ -49,13 +49,30 @@ pub struct DropHover {
     pub depth: isize,
 }
 
-/// The open task overview's fields.
+/// The open task overview's inputs.
 pub struct OverviewInputs {
     pub task: TaskId,
-    pub name: Entity<QuickAddInput>,
-    pub description: Entity<TextareaState>,
+    /// The name and description, while they are open for editing.
+    pub editor: Option<OverviewEditor>,
     pub picker: OverviewPicker,
     pub _subscriptions: Vec<Subscription>,
+}
+
+/// The overview's name and description fields, filled from the task when editing starts.
+pub struct OverviewEditor {
+    pub name: Entity<QuickAddInput>,
+    pub description: Entity<TextareaState>,
+    /// What they held then, to tell whether leaving would lose anything.
+    baseline: (Draft, String),
+    _subscriptions: Vec<Subscription>,
+}
+
+impl OverviewEditor {
+    pub fn has_changes(&self, cx: &App) -> bool {
+        let (draft, description) = &self.baseline;
+        self.name.read(cx).draft() != draft
+            || self.description.read(cx).value() != description.as_str()
+    }
 }
 
 pub enum OverviewPicker {
@@ -305,30 +322,62 @@ impl Workspace {
     }
 
     fn sync_overview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let wanted = self.state.overview;
-        if let Some(overview) = &self.overview
-            && Some(overview.task) == wanted
-        {
-            let projects = self.state.projects().to_vec();
-            overview
-                .name
-                .update(cx, |name, _| name.set_projects(projects));
-            return;
+        let wanted = self
+            .state
+            .overview
+            .filter(|&id| self.state.task(id).is_some());
+        if self.overview.as_ref().map(|o| o.task) != wanted {
+            self.overview = wanted.map(|task| OverviewInputs {
+                task,
+                editor: None,
+                picker: OverviewPicker::Closed,
+                _subscriptions: Vec::new(),
+            });
+            if wanted.is_some() {
+                window.focus(&self.modal_focus, cx);
+            }
         }
-        self.overview = None;
-        let Some(task) = wanted.and_then(|id| self.state.task(id)).cloned() else {
+        let Some(overview) = &self.overview else {
             return;
         };
+        let id = overview.task;
+        match (&overview.editor, self.state.overview_editing) {
+            (Some(editor), true) => {
+                let projects = self.state.projects().to_vec();
+                editor
+                    .name
+                    .update(cx, |name, _| name.set_projects(projects));
+            }
+            (None, false) => {}
+            (Some(_), false) => {
+                if let Some(overview) = &mut self.overview {
+                    overview.editor = None;
+                }
+                // Focus was in the editor; the overview takes it back for Esc and the arrows.
+                window.focus(&self.modal_focus, cx);
+            }
+            (None, true) => {
+                let editor = self.new_overview_editor(id, window, cx);
+                if let Some(overview) = &mut self.overview {
+                    overview.editor = editor;
+                }
+            }
+        }
+    }
+
+    fn new_overview_editor(
+        &self,
+        id: TaskId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<OverviewEditor> {
+        let task = self.state.task(id)?;
         // An existing name is literal: only what is typed into it is read for projects and dates.
+        let draft = Draft::from_text(&task.name, true);
         let projects = self.state.projects().to_vec();
         let name = cx.new(|cx| {
-            QuickAddInput::new(
-                Draft::from_text(&task.name, true),
-                projects,
-                "Task name",
-                cx,
-            )
-            .with_text_size(px(20.), px(28.))
+            QuickAddInput::new(draft.clone(), projects, "Task name", cx)
+                .with_text_size(px(20.), px(28.))
         });
         let description = cx.new(|cx| {
             TextareaState::new(window, cx)
@@ -336,51 +385,92 @@ impl Workspace {
                 .placeholder("Description")
                 .default_value(task.description.clone())
         });
-        let id = task.id;
         let subscriptions = vec![
-            cx.subscribe_in(
-                &name,
-                window,
-                move |this, _, event, window, cx| match event {
-                    QuickAddEvent::Submit => this.save_overview(id, window, cx),
-                    QuickAddEvent::Cancel => this.escape(&Escape, window, cx),
-                    QuickAddEvent::Changed => cx.notify(),
-                },
-            ),
-            cx.on_blur(&name.focus_handle(cx), window, move |this, window, cx| {
-                this.save_overview(id, window, cx)
-            }),
-            cx.subscribe_in(&description, window, move |this, _, event, window, cx| {
-                if let InputEvent::Blur = event {
-                    this.save_overview(id, window, cx);
-                }
+            cx.subscribe_in(&name, window, |this, _, event, window, cx| match event {
+                QuickAddEvent::Submit => this.save_overview(window, cx),
+                QuickAddEvent::Cancel => this.act(window, cx, AppState::cancel_editing_overview),
+                QuickAddEvent::Changed => cx.notify(),
             }),
         ];
-        window.focus(&self.modal_focus, cx);
-        self.overview = Some(OverviewInputs {
-            task: id,
+        window.focus(&name.focus_handle(cx), cx);
+        Some(OverviewEditor {
             name,
             description,
-            picker: OverviewPicker::Closed,
+            baseline: (draft, task.description.clone()),
             _subscriptions: subscriptions,
-        });
+        })
     }
 
-    pub fn save_overview(&mut self, id: TaskId, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(overview) = self.overview.as_ref().filter(|o| o.task == id) else {
+    /// Opens the overview's name and description for editing, with the cursor in the name or the description.
+    pub fn edit_overview(
+        &mut self,
+        description: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.act(window, cx, AppState::start_editing_overview);
+        if description && let Some(editor) = self.overview.as_ref().and_then(|o| o.editor.as_ref())
+        {
+            let input = editor.description.clone();
+            input.update(cx, |d, cx| d.focus(window, cx));
+        }
+    }
+
+    /// Whether the overview's editor has a name to save. A name that is only a project or a date has none.
+    pub fn can_save_overview(&self, cx: &App) -> bool {
+        self.overview
+            .as_ref()
+            .and_then(|o| o.editor.as_ref())
+            .is_some_and(|e| {
+                !self
+                    .state
+                    .composer_result(e.name.read(cx).draft())
+                    .name
+                    .is_empty()
+            })
+    }
+
+    /// The overview editor's Save.
+    pub fn save_overview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.can_save_overview(cx) {
+            return;
+        }
+        let Some((id, editor)) = self
+            .overview
+            .as_ref()
+            .and_then(|o| Some((o.task, o.editor.as_ref()?)))
+        else {
             return;
         };
-        let name = overview.name.read(cx).draft().clone();
-        let description = overview.description.read(cx).value().to_string();
-        let input = overview.name.clone();
-        if self.state.save_overview(id, &name, &description) && !name.blocks().is_empty() {
-            // What the blocks said is set now, so they leave the name.
-            if let Some(task) = self.state.task(id) {
-                let draft = Draft::from_text(&task.name, true);
-                input.update(cx, |input, cx| input.set_draft(draft, cx));
-            }
-        }
+        let name = editor.name.read(cx).draft().clone();
+        let description = editor.description.read(cx).value().to_string();
+        self.state.save_overview(id, &name, &description);
         self.sync(window, cx);
+    }
+
+    /// Leaves the overview's task to open `next`'s overview, or closes the overview when `None`. Unsaved
+    /// changes in its editor are asked about first, as in Todoist.
+    pub fn leave_overview(
+        &mut self,
+        next: Option<TaskId>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let unsaved = self
+            .overview
+            .as_ref()
+            .and_then(|o| o.editor.as_ref())
+            .is_some_and(|e| e.has_changes(cx));
+        if unsaved {
+            self.act(window, cx, |s| s.request_discard_to_leave_overview(next));
+            // The dialog takes the keyboard, so Return discards and Esc goes back to the editor.
+            window.focus(&self.modal_focus, cx);
+        } else {
+            self.act(window, cx, |s| match next {
+                Some(id) => s.open_overview(id),
+                None => s.dismiss_overview(),
+            });
+        }
     }
 
     pub fn open_overview_picker(
@@ -570,8 +660,7 @@ impl Workspace {
 
     /// Adds a subtask in the overview while it is open, otherwise to the selected task in the list.
     pub fn new_subtask(&mut self, _: &NewSubtask, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(open) = self.state.overview {
-            self.save_overview(open, window, cx);
+        if self.state.overview.is_some() {
             self.act(window, cx, AppState::start_adding_subtask_in_overview);
         } else {
             self.act(window, cx, |s| s.start_adding_subtask(None));
@@ -625,10 +714,7 @@ impl Workspace {
     pub fn step(&mut self, offset: isize, window: &mut Window, cx: &mut Context<Self>) {
         if self.state.overview.is_some() {
             if let Some(id) = self.state.overview_neighbour(offset) {
-                if let Some(open) = self.state.overview {
-                    self.save_overview(open, window, cx);
-                }
-                self.act(window, cx, |s| s.open_overview(id));
+                self.leave_overview(Some(id), window, cx);
             }
         } else {
             self.act(window, cx, |s| s.move_selection(offset));
@@ -655,8 +741,13 @@ impl Workspace {
         self.act(window, cx, |s| s.toggle_completed(None));
     }
 
+    /// Edits the selected task in place, or the overview's name and description while it is open.
     fn edit(&mut self, _: &Edit, window: &mut Window, cx: &mut Context<Self>) {
-        self.act(window, cx, |s| s.start_editing(None));
+        if self.state.overview.is_some() {
+            self.edit_overview(false, window, cx);
+        } else {
+            self.act(window, cx, |s| s.start_editing(None));
+        }
     }
 
     fn indent(&mut self, _: &Indent, window: &mut Window, cx: &mut Context<Self>) {
@@ -695,8 +786,8 @@ impl Workspace {
         }
     }
 
-    /// Esc closes the topmost layer: a picker, a confirmation, settings, a dialog, the overview, the composer, then
-    /// the selection.
+    /// Esc closes the topmost layer: a picker, a confirmation, settings, a dialog, the overview's editor, the
+    /// overview, the composer, then the selection.
     pub fn escape(&mut self, _: &Escape, window: &mut Window, cx: &mut Context<Self>) {
         if self
             .overview
@@ -722,12 +813,17 @@ impl Workspace {
         if self.state.dialog != Dialog::None {
             let discarding = matches!(self.state.dialog, Dialog::ConfirmDiscard(_));
             self.act(window, cx, AppState::cancel_dialog);
-            if discarding && let Some(composer) = &self.composer {
-                // Back to the changes it kept.
+            // Back to the changes it kept.
+            if discarding
+                && let Some(editor) = self.overview.as_ref().and_then(|o| o.editor.as_ref())
+            {
+                window.focus(&editor.name.focus_handle(cx), cx);
+            } else if discarding && let Some(composer) = &self.composer {
                 composer.update(cx, |c, cx| c.focus(window, cx));
             }
-        } else if let Some(id) = self.state.overview {
-            self.save_overview(id, window, cx);
+        } else if self.state.overview_editing {
+            self.act(window, cx, AppState::cancel_editing_overview);
+        } else if self.state.overview.is_some() {
             self.act(window, cx, AppState::dismiss_overview);
         } else if self.state.composer.is_in_list() {
             // Focus has left the composer, say for a click in the list, so its own Esc can't close it.

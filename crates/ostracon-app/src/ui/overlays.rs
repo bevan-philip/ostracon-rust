@@ -2,7 +2,7 @@
 
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{Input, Textarea};
+use gpui_kit::component::input::{Input, Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{Disableable as _, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -12,6 +12,7 @@ use ostracon_core::backup::Backup;
 use ostracon_core::{ProjectColor, TaskId};
 
 use super::actions::{Confirm, Escape, NewSubtask};
+use super::quick_add::QuickAddInput;
 use super::theme::{self, Palette, TASK_TEXT};
 use super::workspace::{OverviewPicker, Panel, Workspace};
 use crate::format;
@@ -23,6 +24,8 @@ const MODAL_TOP: f32 = 72.;
 const OVERVIEW_CHECK_GAP: f32 = 6.;
 /// The overview's name input's own left padding, so its text lines up with what's below.
 const OVERVIEW_INPUT_PAD: f32 = 8.;
+/// Above and below the name and description inside the overview's editor.
+const OVERVIEW_EDITOR_PAD_Y: f32 = 6.;
 
 impl Workspace {
     /// The modal layer, if anything is open, topmost first.
@@ -87,11 +90,24 @@ impl Workspace {
                 .key_context(format!("Modal {context}").as_str())
                 .track_focus(&self.modal_focus)
                 .occlude()
-                // A click on the backdrop closes the top layer, as Esc does. It calls the handler rather than
-                // dispatching the action, which would need focus to be inside the modal.
+                // A click on the backdrop closes the top layer, as Esc does, except that it closes the overview
+                // even while it is being edited, asking first about unsaved changes. It calls the handlers rather
+                // than dispatching the action, which would need focus to be inside the modal.
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(|this, _, window, cx| this.escape(&Escape, window, cx)),
+                    cx.listener(|this, _, window, cx| {
+                        let overview_on_top = this.panel == Panel::None
+                            && this.state.dialog == Dialog::None
+                            && this
+                                .overview
+                                .as_ref()
+                                .is_some_and(|o| matches!(o.picker, OverviewPicker::Closed));
+                        if overview_on_top {
+                            this.leave_overview(None, window, cx);
+                        } else {
+                            this.escape(&Escape, window, cx);
+                        }
+                    }),
                 )
                 .child(content)
                 .into_any_element(),
@@ -136,9 +152,14 @@ impl Workspace {
             Some((pid, parent.name.clone(), parent.is_completed(), open))
         });
         let subtasks: Vec<_> = self.state.subtasks(task.id).into_iter().cloned().collect();
-        let suggestions = overview
-            .name
-            .update(cx, |name, cx| name.render_suggestions(palette, cx));
+        let editor = overview
+            .editor
+            .as_ref()
+            .map(|e| (e.name.clone(), e.description.clone()));
+        let suggestions = editor
+            .as_ref()
+            .and_then(|(name, _)| name.update(cx, |name, cx| name.render_suggestions(palette, cx)));
+        let can_save = self.can_save_overview(cx);
         let (date_picker, reminder_editor) = match &overview.picker {
             OverviewPicker::Closed => (None, None),
             OverviewPicker::Date(p) => (Some(p.clone().into_any_element()), None),
@@ -240,8 +261,7 @@ impl Workspace {
                             .child(open.to_string())
                             .child(Icon::new(Lucide::ChevronRight).xsmall())
                             .on_click(cx.listener(move |this, _, window, cx| {
-                                this.save_overview(id, window, cx);
-                                this.act(window, cx, |s| s.open_overview(pid));
+                                this.leave_overview(Some(pid), window, cx)
                             }))
                             .test_support(),
                     ),
@@ -255,7 +275,12 @@ impl Workspace {
                     .child(
                         div()
                             .id("overview-check")
-                            .mt(px(5.))
+                            // Level with the name's first line, which the editor's frame moves down.
+                            .mt(px(if editor.is_some() {
+                                5. + OVERVIEW_EDITOR_PAD_Y + 1.
+                            } else {
+                                5.
+                            }))
                             .size(px(theme::CHECKBOX))
                             .flex_none()
                             .rounded_full()
@@ -267,38 +292,65 @@ impl Workspace {
                                 this.act(window, cx, |s| s.toggle_completed_of(&[id]))
                             })),
                     )
-                    .child(
-                        div()
+                    .child(match editor {
+                        Some((name, description)) => self.render_overview_editor(
+                            name,
+                            description,
+                            suggestions,
+                            can_save,
+                            palette,
+                            cx,
+                        ),
+                        None => div()
                             .flex_1()
                             .min_w_0()
-                            .px(px(OVERVIEW_INPUT_PAD))
-                            .font_weight(FontWeight::BOLD)
-                            .child(overview.name.clone())
-                            .when_some(suggestions, |d, s| {
-                                d.child(deferred(anchored().child(s)).with_priority(2))
-                            }),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_start()
-                    .ml(text_inset)
-                    .child(
-                        Icon::new(Lucide::TextAlignStart)
-                            .small()
-                            .mt(px(4.))
-                            .text_color(palette.faint),
-                    )
-                    .child(
-                        div().flex_1().min_w_0().child(
-                            Textarea::new(&overview.description)
-                                .appearance(false)
-                                .small()
-                                .text_size(px(14.))
-                                .text_color(palette.muted),
-                        ),
-                    ),
+                            .child(
+                                div()
+                                    .id("overview-name")
+                                    .px(px(OVERVIEW_INPUT_PAD))
+                                    .cursor_text()
+                                    .text_size(px(20.))
+                                    .line_height(px(28.))
+                                    .font_weight(FontWeight::BOLD)
+                                    .child(task.name.clone())
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.edit_overview(false, window, cx)
+                                    }))
+                                    .test_support(),
+                            )
+                            .child(
+                                div()
+                                    .id("overview-description")
+                                    .flex()
+                                    .items_start()
+                                    .gap_2()
+                                    .mt_1()
+                                    .px(px(OVERVIEW_INPUT_PAD))
+                                    .cursor_text()
+                                    .text_size(px(14.))
+                                    .line_height(px(22.))
+                                    .child(
+                                        Icon::new(Lucide::TextAlignStart)
+                                            .small()
+                                            .mt(px(3.))
+                                            .text_color(palette.faint),
+                                    )
+                                    .child(if task.description.is_empty() {
+                                        div().text_color(palette.faint).child("Description")
+                                    } else {
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .text_color(palette.muted)
+                                            .child(task.description.clone())
+                                    })
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.edit_overview(true, window, cx)
+                                    }))
+                                    .test_support(),
+                            )
+                            .into_any_element(),
+                    }),
             )
             .child(div().h(px(20.)))
             .when(!subtasks.is_empty(), |d| {
@@ -353,8 +405,7 @@ impl Workspace {
                             .child(sub.name.clone()),
                     )
                     .on_click(cx.listener(move |this, _, window, cx| {
-                        this.save_overview(id, window, cx);
-                        this.act(window, cx, |s| s.open_overview(sid));
+                        this.leave_overview(Some(sid), window, cx)
                     }))
             }))
             .child(add_subtask);
@@ -561,9 +612,8 @@ impl Workspace {
                                         .small()
                                         .icon(Icon::new(Lucide::X))
                                         .tooltip("Close (Esc)")
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.save_overview(id, window, cx);
-                                            this.act(window, cx, AppState::dismiss_overview);
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.leave_overview(None, window, cx)
                                         })),
                                 ),
                         ),
@@ -571,6 +621,77 @@ impl Workspace {
                 .child(div().flex().flex_1().min_h_0().child(main).child(side))
                 .into_any_element(),
         )
+    }
+
+    /// The overview's name and description open for editing, framed as in Todoist, with Cancel and Save below.
+    fn render_overview_editor(
+        &self,
+        name: Entity<QuickAddInput>,
+        description: Entity<TextareaState>,
+        suggestions: Option<AnyElement>,
+        can_save: bool,
+        palette: &Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    // With the border, the name's text stays where it was before editing.
+                    .px(px(OVERVIEW_INPUT_PAD - 1.))
+                    .py(px(OVERVIEW_EDITOR_PAD_Y))
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(palette.card_border)
+                    .child(div().font_weight(FontWeight::BOLD).child(name))
+                    .when_some(suggestions, |d, s| {
+                        d.child(
+                            div()
+                                .h_0()
+                                .child(deferred(anchored().child(s)).with_priority(2)),
+                        )
+                    })
+                    // No padding of its own, so the description starts where the name does.
+                    .child(
+                        Textarea::new(&description)
+                            .appearance(false)
+                            .small()
+                            .px_0()
+                            .text_size(px(14.))
+                            .text_color(palette.muted),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        Button::new("overview-cancel")
+                            .small()
+                            .label("Cancel")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.act(window, cx, AppState::cancel_editing_overview)
+                            })),
+                    )
+                    .child(
+                        Button::new("overview-save")
+                            .small()
+                            .primary()
+                            .label("Save")
+                            .disabled(!can_save)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.save_overview(window, cx)),
+                            ),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn render_confirm_delete_tasks(

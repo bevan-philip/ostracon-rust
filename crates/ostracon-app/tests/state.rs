@@ -449,7 +449,7 @@ fn clicking_a_task_asks_before_discarding_the_composer() {
     let ids = add_outline(&mut state, "A\nB");
     state.start_adding();
     state.request_discard_to_open(ids[1]);
-    assert_eq!(state.dialog, Dialog::ConfirmDiscard(ids[1]));
+    assert_eq!(state.dialog, Dialog::ConfirmDiscard(Some(ids[1])));
     state.cancel_dialog();
     assert_eq!(state.composer, Composer::Adding { parent: None });
     assert_eq!(state.overview, None);
@@ -468,6 +468,43 @@ fn clicking_a_task_asks_before_discarding_the_composer() {
     state.reload();
     assert_eq!(state.dialog, Dialog::None, "the task to open is gone");
     assert_eq!(state.composer, Composer::Editing { task: ids[0] });
+}
+
+#[test]
+fn leaving_the_overview_editor_asks_before_discarding() {
+    let mut state = state();
+    let ids = add_outline(&mut state, "A\nB");
+    state.open_overview(ids[0]);
+    state.request_discard_to_leave_overview(None);
+    assert_eq!(state.dialog, Dialog::None, "nothing to discard");
+
+    state.start_editing_overview();
+    state.request_discard_to_leave_overview(Some(ids[1]));
+    assert_eq!(state.dialog, Dialog::ConfirmDiscard(Some(ids[1])));
+    state.cancel_dialog();
+    assert!(state.overview_editing, "back to the edit");
+    state.request_discard_to_leave_overview(Some(ids[1]));
+    state.confirm_dialog();
+    assert_eq!(state.overview, Some(ids[1]));
+    assert!(!state.overview_editing);
+
+    state.start_editing_overview();
+    state.request_discard_to_leave_overview(None);
+    state.confirm_dialog();
+    assert_eq!(state.overview, None);
+    assert!(!state.overview_editing);
+
+    // Saving closes the editor; a dialog whose task goes is dropped.
+    state.open_overview(ids[0]);
+    state.start_editing_overview();
+    assert!(state.save_overview(ids[0], &Draft::from_text("A2", true), ""));
+    assert!(!state.overview_editing);
+    state.start_editing_overview();
+    state.request_discard_to_leave_overview(Some(ids[1]));
+    state.repository().delete_task(ids[1]).unwrap();
+    state.reload();
+    assert_eq!(state.dialog, Dialog::None);
+    assert!(state.overview_editing);
 }
 
 #[test]
