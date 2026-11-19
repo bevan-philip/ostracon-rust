@@ -314,6 +314,34 @@ fn the_overview_adds_subtasks_with_the_full_composer(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn a_subtask_overview_opens_its_parent(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let (workspace, cx) = open(cx, |repo| {
+        let a = repo
+            .add_task(NewTask {
+                name: "A".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        repo.add_task(NewTask {
+            name: "B".into(),
+            parent_id: Some(a.id),
+            ..Default::default()
+        })
+        .unwrap();
+    });
+    let (a, b) = workspace.read_with(cx, |w, _| {
+        (w.state.rows()[0].task.id, w.state.rows()[1].task.id)
+    });
+    cx.simulate_keystrokes("j j cmd-o");
+    cx.run_until_parked();
+    assert_eq!(workspace.read_with(cx, |w, _| w.state.overview), Some(b));
+    cx.update(|window, cx| window.click("overview-parent", cx));
+    cx.run_until_parked();
+    assert_eq!(workspace.read_with(cx, |w, _| w.state.overview), Some(a));
+}
+
+#[gpui_kit::test]
 fn deleting_from_the_overview(cx: &mut TestAppContext) {
     use gpui_kit::test::TestWindowExt as _;
     let (workspace, cx) = open(cx, |repo| {

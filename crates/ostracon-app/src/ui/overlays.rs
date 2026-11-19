@@ -124,21 +124,17 @@ impl Workspace {
         let task = self.state.task(overview.task)?.clone();
         let now = ZonedDateTime::now();
         let project = self.state.project_by_id(task.project_id).cloned();
-        let breadcrumb: Vec<String> = {
-            let mut names: Vec<String> = self
+        // A sub-task names its parent above its own name, as Todoist does, and opens it on a click.
+        let parent = task.parent_id.and_then(|pid| {
+            let parent = self.state.task(pid)?;
+            let open = self
                 .state
-                .ancestors(task.id)
+                .subtasks(pid)
                 .iter()
-                .rev()
-                .filter_map(|id| self.state.task(*id))
-                .map(|t| t.name.clone())
-                .collect();
-            names.insert(
-                0,
-                project.as_ref().map_or(String::new(), |p| p.name.clone()),
-            );
-            names
-        };
+                .filter(|t| !t.is_completed())
+                .count();
+            Some((pid, parent.name.clone(), parent.is_completed(), open))
+        });
         let subtasks: Vec<_> = self.state.subtasks(task.id).into_iter().cloned().collect();
         let suggestions = overview
             .name
@@ -211,6 +207,46 @@ impl Workspace {
             .pr_4()
             .pt_4()
             .pb_4()
+            .when_some(parent, |d, (pid, name, done, open)| {
+                d.child(
+                    div().flex().pb_2().child(
+                        div()
+                            .id("overview-parent")
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .min_w_0()
+                            .px_2p5()
+                            .py_1()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(palette.card_border)
+                            .cursor_pointer()
+                            .hover(|d| d.bg(palette.row_hover))
+                            .text_size(px(13.))
+                            .text_color(palette.muted)
+                            .child(
+                                div()
+                                    .size(px(12.))
+                                    .flex_none()
+                                    .rounded_full()
+                                    .border(px(1.5))
+                                    .border_color(palette.muted)
+                                    .when(done, |d| d.bg(palette.faint)),
+                            )
+                            .child(div().min_w_0().truncate().child(name))
+                            .child(div().w_px().h(px(14.)).bg(palette.hairline))
+                            .child(Icon::new(Lucide::GitBranch).xsmall())
+                            .child(open.to_string())
+                            .child(Icon::new(Lucide::ChevronRight).xsmall())
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.save_overview(id, window, cx);
+                                this.act(window, cx, |s| s.open_overview(pid));
+                            }))
+                            .test_support(),
+                    ),
+                )
+            })
             .child(
                 div()
                     .flex()
@@ -467,7 +503,7 @@ impl Workspace {
                                 .text_size(px(14.))
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(header_icon.small())
-                                .child(breadcrumb.join(" / ")),
+                                .child(project.as_ref().map_or(String::new(), |p| p.name.clone())),
                         )
                         .child(
                             div()
