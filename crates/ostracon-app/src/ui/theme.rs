@@ -57,6 +57,8 @@ impl Look {
     /// Draws every window in this look: Ostracon's own [`Palette`], and gpui-component's theme for its inputs,
     /// menus, buttons and Markdown.
     pub fn apply(self, cx: &mut App) {
+        let dark = self.mode.is_dark();
+        let light_or_dark = if dark { "Dark" } else { "Light" };
         let config = match self.scheme {
             Scheme::Classic => {
                 let registry = ThemeRegistry::global(cx);
@@ -66,7 +68,18 @@ impl Look {
                 }
                 .clone()
             }
-            Scheme::Flexoki => flexoki(self.mode),
+            Scheme::Flexoki => vendored(
+                include_str!("../../assets/themes/flexoki.json"),
+                &format!("Flexoki {light_or_dark}"),
+            ),
+            Scheme::Merino => vendored(
+                include_str!("../../assets/themes/merino.json"),
+                &format!("Merino {light_or_dark}"),
+            ),
+            Scheme::MadoromiHaru => Season::Haru.theme(dark),
+            Scheme::MadoromiNatsu => Season::Natsu.theme(dark),
+            Scheme::MadoromiAki => Season::Aki.theme(dark),
+            Scheme::MadoromiFuyu => Season::Fuyu.theme(dark),
         };
         cx.set_global(self.palette());
         Theme::update(cx, |theme| theme.apply_config(&config));
@@ -201,20 +214,237 @@ impl Look {
                 warning_bg: rgb(0x241e08).into(),
                 warning_text: rgb(0xd0a215).into(),
             },
+            // Merino Light: white panes on near-white, GitHub's blue.
+            (Scheme::Merino, ThemeMode::Light) => Palette {
+                dark,
+                page: rgb(0xffffff).into(),
+                sidebar: rgb(0xfafafa).into(),
+                sidebar_hover: rgb(0xefeff2).into(),
+                sidebar_selected: rgb(0xe5e7eb).into(),
+                text: rgb(0x181c21).into(),
+                muted: rgb(0x4b535e).into(),
+                faint: rgb(0x7a828c).into(),
+                hairline: rgb(0xeaecef).into(),
+                accent: rgb(0x0969da).into(),
+                accent_text: rgb(0xffffff).into(),
+                row_selected: rgb(0xeaf3ff).into(),
+                row_hover: rgb(0xf5f6f8).into(),
+                card: rgb(0xffffff).into(),
+                card_border: rgb(0xd8dee4).into(),
+                backdrop: rgba(0x181c2152).into(),
+                toast: rgb(0x181c21).into(),
+                toast_text: rgb(0xffffff).into(),
+                toast_action: rgb(0x58a6ff).into(),
+                overdue: rgb(0xcf222e).into(),
+                today: rgb(0x1a7f37).into(),
+                tomorrow: rgb(0x9d5c00).into(),
+                soon: rgb(0x8250df).into(),
+                later: rgb(0x7a828c).into(),
+                block_project: rgba(0x0969da26).into(),
+                block_due: rgba(0x1a7f3726).into(),
+                block_reminder: rgba(0x9d5c0026).into(),
+                warning_bg: rgb(0xfff8c5).into(),
+                warning_text: rgb(0x7d4800).into(),
+            },
+            // Merino Dark: a slate pane in an obsidian shell.
+            (Scheme::Merino, ThemeMode::Dark) => Palette {
+                dark,
+                page: rgb(0x1b1f23).into(),
+                sidebar: rgb(0x0f1114).into(),
+                sidebar_hover: rgb(0x1a1e24).into(),
+                sidebar_selected: rgb(0x2d3136).into(),
+                text: rgb(0xe6edf3).into(),
+                muted: rgb(0x8b949e).into(),
+                faint: rgb(0x6e7681).into(),
+                hairline: rgb(0x262c34).into(),
+                accent: rgb(0x2f81f7).into(),
+                accent_text: rgb(0xffffff).into(),
+                row_selected: rgb(0x15253b).into(),
+                row_hover: rgb(0x21262d).into(),
+                card: rgb(0x21262d).into(),
+                card_border: rgb(0x30363d).into(),
+                backdrop: rgba(0x0000008c).into(),
+                toast: rgb(0x2d333b).into(),
+                toast_text: rgb(0xe6edf3).into(),
+                toast_action: rgb(0x58a6ff).into(),
+                overdue: rgb(0xff7b72).into(),
+                today: rgb(0x3fb950).into(),
+                tomorrow: rgb(0xd29922).into(),
+                soon: rgb(0xbc8cff).into(),
+                later: rgb(0x8b949e).into(),
+                block_project: rgba(0x2f81f733).into(),
+                block_due: rgba(0x3fb95033).into(),
+                block_reminder: rgba(0xd2992233).into(),
+                warning_bg: rgb(0x332614).into(),
+                warning_text: rgb(0xe3b341).into(),
+            },
+            (Scheme::MadoromiHaru, _) => Inks::of(Season::Haru, dark).palette(dark),
+            (Scheme::MadoromiNatsu, _) => Inks::of(Season::Natsu, dark).palette(dark),
+            (Scheme::MadoromiAki, _) => Inks::of(Season::Aki, dark).palette(dark),
+            (Scheme::MadoromiFuyu, _) => Inks::of(Season::Fuyu, dark).palette(dark),
         }
     }
 }
 
-/// gpui-component's theme for Flexoki in `mode`, from `assets/themes/flexoki.json`.
-fn flexoki(mode: ThemeMode) -> Rc<ThemeConfig> {
-    let set: ThemeSet = serde_json::from_str(include_str!("../../assets/themes/flexoki.json"))
-        .expect("the vendored Flexoki theme parses");
+/// The theme called `name` in a vendored gpui-component theme set.
+fn vendored(json: &str, name: &str) -> Rc<ThemeConfig> {
+    let set: ThemeSet = serde_json::from_str(json).expect("the vendored themes parse");
     let config = set
         .themes
         .into_iter()
-        .find(|config| config.mode == mode)
-        .expect("the vendored Flexoki theme has a light and a dark variant");
+        .find(|config| config.name == name)
+        .unwrap_or_else(|| panic!("the vendored themes include {name}"));
     Rc::new(config)
+}
+
+/// The four seasons of madoromi, each its own [`Scheme`].
+#[derive(Clone, Copy)]
+enum Season {
+    Haru,
+    Natsu,
+    Aki,
+    Fuyu,
+}
+
+impl Season {
+    /// gpui-component's theme for this season by night when `dark`, else by day.
+    fn theme(self, dark: bool) -> Rc<ThemeConfig> {
+        let season = match self {
+            Season::Haru => "Haru",
+            Season::Natsu => "Natsu",
+            Season::Aki => "Aki",
+            Season::Fuyu => "Fuyu",
+        };
+        let time = if dark { "Yoru" } else { "Hiru" };
+        vendored(
+            include_str!("../../assets/themes/madoromi.json"),
+            &format!("Madoromi {season} {time}"),
+        )
+    }
+}
+
+/// The madoromi colours Ostracon draws with, under madoromi's own names; its style guide says what each is for.
+struct Inks {
+    /// Paper: the background.
+    kami: u32,
+    /// Secondary panes: sidebars and floating windows.
+    hyoshi: u32,
+    /// Surfaces: hovered and selected items, borders.
+    nijimi0: u32,
+    nijimi1: u32,
+    /// Text.
+    sumi: u32,
+    /// Secondary text.
+    usuzumi0: u32,
+    /// Placeholders.
+    kasure1: u32,
+    /// The accent.
+    fuji: u32,
+    /// Errors.
+    beni: u32,
+    /// Success.
+    wakaba: u32,
+    kaki: u32,
+    /// Warnings.
+    yamabuki: u32,
+    ai: u32,
+}
+
+impl Inks {
+    /// `season` by night when `dark`, else by day; from madoromi's `palettes/madoromi.json`.
+    #[rustfmt::skip]
+    fn of(season: Season, dark: bool) -> Inks {
+        match (season, dark) {
+            (Season::Haru, false) => Inks {
+                kami: 0xf6eff8, hyoshi: 0xece5ef, nijimi0: 0xd9ccdd, nijimi1: 0xc8bccd, sumi: 0x584a5c,
+                usuzumi0: 0x77697c, kasure1: 0x998d9e, fuji: 0x6928bd, beni: 0xce2700, wakaba: 0x5e8933,
+                kaki: 0xfd5217, yamabuki: 0xbda343, ai: 0x1955bf,
+            },
+            (Season::Haru, true) => Inks {
+                kami: 0x241c26, hyoshi: 0x1c151f, nijimi0: 0x392e3c, nijimi1: 0x4e4352, sumi: 0xe1d1e7,
+                usuzumi0: 0xb7a8bd, kasure1: 0x8a7e8f, fuji: 0xddb3ff, beni: 0xff8b79, wakaba: 0xc1dd4a,
+                kaki: 0xffbb74, yamabuki: 0xffc849, ai: 0x6eadff,
+            },
+            (Season::Natsu, false) => Inks {
+                kami: 0xe9f4f8, hyoshi: 0xddeaf0, nijimi0: 0xbed6df, nijimi1: 0xaec5ce, sumi: 0x3b545e,
+                usuzumi0: 0x57717a, kasure1: 0x80969f, fuji: 0x6526b9, beni: 0xb53753, wakaba: 0x00915c,
+                kaki: 0xff5735, yamabuki: 0xe3940b, ai: 0x526ccb,
+            },
+            (Season::Natsu, true) => Inks {
+                kami: 0x132227, hyoshi: 0x0e1a1f, nijimi0: 0x23363d, nijimi1: 0x374b53, sumi: 0xc0dde8,
+                usuzumi0: 0x97b3be, kasure1: 0x728790, fuji: 0xaea8ff, beni: 0xff8c9f, wakaba: 0xb9d740,
+                kaki: 0xffb66d, yamabuki: 0xeec307, ai: 0x4ab8ff,
+            },
+            (Season::Aki, false) => Inks {
+                kami: 0xf8f0e9, hyoshi: 0xf0e6dd, nijimi0: 0xdfcebf, nijimi1: 0xcebeaf, sumi: 0x5d4c3c,
+                usuzumi0: 0x7d6b5a, kasure1: 0x9f8f81, fuji: 0x581ca7, beni: 0xa43b3b, wakaba: 0x7e8418,
+                kaki: 0xff5635, yamabuki: 0xe3940b, ai: 0x384dad,
+            },
+            (Season::Aki, true) => Inks {
+                kami: 0x271d14, hyoshi: 0x20160e, nijimi0: 0x3d3024, nijimi1: 0x534538, sumi: 0xe8d3c1,
+                usuzumi0: 0xbeaa98, kasure1: 0x908072, fuji: 0xd3a1ff, beni: 0xff8672, wakaba: 0xbac105,
+                kaki: 0xff9b8f, yamabuki: 0xffae1e, ai: 0x7f9bea,
+            },
+            (Season::Fuyu, false) => Inks {
+                kami: 0xf0f1f8, hyoshi: 0xe5e7f3, nijimi0: 0xccd0e4, nijimi1: 0xbcc0d3, sumi: 0x4a4e63,
+                usuzumi0: 0x696d83, kasure1: 0x8d91a4, fuji: 0x5e21b0, beni: 0xbb355a, wakaba: 0x618c32,
+                kaki: 0xff5635, yamabuki: 0xe3940b, ai: 0x4a63c3,
+            },
+            (Season::Fuyu, true) => Inks {
+                kami: 0x1c1e2a, hyoshi: 0x151722, nijimi0: 0x2f3241, nijimi1: 0x434757, sumi: 0xd2d6eb,
+                usuzumi0: 0xa8adc4, kasure1: 0x7e8294, fuji: 0xbbb8ff, beni: 0xff8799, wakaba: 0xaece34,
+                kaki: 0xff9b8f, yamabuki: 0xecba09, ai: 0x829eeb,
+            },
+        }
+    }
+
+    fn palette(&self, dark: bool) -> Palette {
+        let solid = |hex: u32| Hsla::from(rgb(hex));
+        let wash = |hex: u32, alpha: u32| Hsla::from(rgba(hex << 8 | alpha));
+        let tint = if dark { 0x33 } else { 0x26 };
+        let warning = solid(self.yamabuki);
+        Palette {
+            dark,
+            page: solid(self.kami),
+            sidebar: solid(self.hyoshi),
+            sidebar_hover: solid(self.nijimi0),
+            sidebar_selected: wash(self.fuji, tint),
+            text: solid(self.sumi),
+            muted: solid(self.usuzumi0),
+            faint: solid(self.kasure1),
+            hairline: solid(self.nijimi0),
+            accent: solid(self.fuji),
+            accent_text: solid(self.kami),
+            row_selected: wash(self.fuji, if dark { 0x26 } else { 0x1a }),
+            row_hover: solid(self.hyoshi),
+            card: solid(self.hyoshi),
+            card_border: solid(self.nijimi1),
+            backdrop: if dark {
+                rgba(0x0000008c).into()
+            } else {
+                wash(self.sumi, 0x52)
+            },
+            // A pale slip of paper by day, a darker one by night, so the accent reads on it either way.
+            toast: solid(if dark { self.nijimi1 } else { self.nijimi0 }),
+            toast_text: solid(self.sumi),
+            toast_action: solid(self.fuji),
+            overdue: solid(self.beni),
+            today: solid(self.wakaba),
+            tomorrow: solid(self.kaki),
+            soon: solid(self.fuji),
+            later: solid(self.usuzumi0),
+            block_project: wash(self.ai, tint),
+            block_due: wash(self.wakaba, tint),
+            block_reminder: wash(self.kaki, tint),
+            warning_bg: mix(solid(self.kami), warning, 0.15),
+            // By day yamabuki is too pale to read as text, so it is darkened towards the ink.
+            warning_text: if dark {
+                warning
+            } else {
+                mix(warning, solid(self.sumi), 0.5)
+            },
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

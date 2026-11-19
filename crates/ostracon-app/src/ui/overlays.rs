@@ -1126,16 +1126,25 @@ impl Workspace {
                     )
                     .child(
                         ButtonGroup::new("scheme").small().outline().children(
-                            [(Scheme::Classic, "Classic"), (Scheme::Flexoki, "Flexoki")]
-                                .into_iter()
-                                .map(|(scheme, label)| {
-                                    Button::new(label)
-                                        .label(label)
-                                        .selected(self.state.scheme == scheme)
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.set_scheme(scheme, window, cx)
-                                        }))
-                                }),
+                            [
+                                (Scheme::Classic, "Classic", None),
+                                (Scheme::Flexoki, "Flexoki", None),
+                                (Scheme::Merino, "Merino", None),
+                                (Scheme::MadoromiHaru, "Haru", Some("Madoromi, spring")),
+                                (Scheme::MadoromiNatsu, "Natsu", Some("Madoromi, summer")),
+                                (Scheme::MadoromiAki, "Aki", Some("Madoromi, autumn")),
+                                (Scheme::MadoromiFuyu, "Fuyu", Some("Madoromi, winter")),
+                            ]
+                            .into_iter()
+                            .map(|(scheme, label, tooltip)| {
+                                Button::new(label)
+                                    .label(label)
+                                    .when_some(tooltip, |b, tooltip| b.tooltip(tooltip))
+                                    .selected(self.state.scheme == scheme)
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.set_scheme(scheme, window, cx)
+                                    }))
+                            }),
                         ),
                     ),
             )

@@ -32,6 +32,14 @@ pub enum Scheme {
     Classic,
     /// Steph Ango's Flexoki, <https://stephango.com/flexoki>.
     Flexoki,
+    /// Merino, slate and blue, as KevinXC5 recreated it for T3 Code, <https://github.com/KevinXC5/t3code-rex-theme>.
+    Merino,
+    /// The seasons of samhain's madoromi, made of fountain pen inks, <https://madoromi.moonwit.ch>. The light
+    /// variant is the season by day (hiru), the dark one by night (yoru).
+    MadoromiHaru,
+    MadoromiNatsu,
+    MadoromiAki,
+    MadoromiFuyu,
 }
 
 impl Settings {

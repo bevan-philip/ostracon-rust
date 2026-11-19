@@ -72,8 +72,10 @@ rather than fail.
 
 **Settings (⌘,)** chooses light or dark, or **System** (the default) to follow the system as it changes.
 
-**Colours** switches between **Classic**, Todoist's colours, and [Flexoki](https://stephango.com/flexoki). Each has
-a light and a dark variant.
+**Colours** switches between **Classic**, Todoist's colours, [Flexoki](https://stephango.com/flexoki),
+**Merino** (from [KevinXC5's T3 Code theme](https://github.com/KevinXC5/t3code-rex-theme)), and the four seasons of
+[madoromi](https://madoromi.moonwit.ch): **Haru**, **Natsu**, **Aki** and **Fuyu**. Each has a light and a dark
+variant; madoromi's are the season by day and by night.
 
 ### Backups
 

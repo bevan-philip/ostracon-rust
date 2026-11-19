@@ -855,3 +855,27 @@ fn schemes_recolour_the_app_and_its_components(cx: &mut TestAppContext) {
     assert_ne!(page, flexoki_black);
     assert_ne!(background, flexoki_black);
 }
+
+#[gpui_kit::test]
+fn every_vendored_scheme_has_a_light_and_a_dark_theme(cx: &mut TestAppContext) {
+    let (workspace, cx) = open(cx, |_| {});
+    for scheme in [
+        Scheme::Flexoki,
+        Scheme::Merino,
+        Scheme::MadoromiHaru,
+        Scheme::MadoromiNatsu,
+        Scheme::MadoromiAki,
+        Scheme::MadoromiFuyu,
+    ] {
+        for appearance in [Appearance::Light, Appearance::Dark] {
+            workspace.update_in(cx, |w, window, cx| {
+                w.set_appearance(appearance, window, cx);
+                w.set_scheme(scheme, window, cx);
+            });
+            let (palette, background) =
+                cx.update(|_, cx| (theme::palette(cx), Theme::global(cx).background));
+            assert_eq!(palette.dark, appearance == Appearance::Dark, "{scheme:?}");
+            assert_eq!(palette.page, background, "{scheme:?} {appearance:?}");
+        }
+    }
+}
