@@ -285,8 +285,8 @@ fn parents_show_hidden_completed_subtasks() {
     state.set_show_completed(true);
     assert_eq!(
         shown(&state),
-        ["A", " A2", "A1"],
-        "completed tasks are listed below the outline"
+        ["A", " A2", " A1"],
+        "completed subtasks follow their open siblings"
     );
 }
 
