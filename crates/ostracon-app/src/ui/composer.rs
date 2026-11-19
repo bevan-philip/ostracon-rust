@@ -5,7 +5,7 @@ use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_kit::component::{Disableable as _, Icon, Sizable as _};
+use gpui_kit::component::{Disableable as _, Icon, Sizable as _, Size};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use jiff::ZonedDateTime;
@@ -428,13 +428,14 @@ impl Render for ComposerView {
                         .child(deferred(anchored().child(s)).with_priority(2)),
                 )
             })
-            // No padding of its own, so the description starts where the name does.
+            // The textarea keeps its padding, so pull it back to start where the name does.
             .child(
-                Textarea::new(&self.description)
-                    .appearance(false)
-                    .small()
-                    .px_0()
-                    .text_size(px(13.)),
+                div().mx(-Size::Small.input_px()).child(
+                    Textarea::new(&self.description)
+                        .appearance(false)
+                        .small()
+                        .text_size(px(13.)),
+                ),
             )
             .child(
                 div()
