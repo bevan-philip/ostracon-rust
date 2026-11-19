@@ -675,3 +675,26 @@ fn closing_the_overview_asks_before_discarding_an_edit(cx: &mut TestAppContext) 
     cx.run_until_parked();
     assert_eq!(workspace.read_with(cx, |w, _| w.state.overview), None);
 }
+
+#[gpui_kit::test]
+fn an_overview_description_lines_up_with_the_name(cx: &mut TestAppContext) {
+    let (workspace, cx) = open(cx, |repo| {
+        repo.add_task(NewTask {
+            name: "A".into(),
+            description: "Notes".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    });
+    let id = workspace.read_with(cx, |w, _| w.state.tasks()[0].id);
+    workspace.update_in(cx, |w, window, cx| {
+        w.act(window, cx, |s| s.open_overview(id))
+    });
+    cx.run_until_parked();
+    // Both sit in the same padding, so with no icon before it the description's text starts with the name's.
+    let name = cx.debug_bounds("overview-name").expect("name");
+    let text = cx
+        .debug_bounds("overview-description-text")
+        .expect("description");
+    assert_eq!(text.left(), name.left() + gpui_kit::px(8.));
+}

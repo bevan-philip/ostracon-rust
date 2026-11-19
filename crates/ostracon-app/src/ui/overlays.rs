@@ -307,6 +307,7 @@ impl Workspace {
                             .child(
                                 div()
                                     .id("overview-name")
+                                    .debug_selector(|| "overview-name".into())
                                     .px(px(OVERVIEW_INPUT_PAD))
                                     .cursor_text()
                                     .text_size(px(20.))
@@ -329,20 +330,28 @@ impl Workspace {
                                     .cursor_text()
                                     .text_size(px(14.))
                                     .line_height(px(22.))
-                                    .child(
-                                        Icon::new(Lucide::TextAlignStart)
-                                            .small()
-                                            .mt(px(3.))
-                                            .text_color(palette.faint),
-                                    )
-                                    .child(if task.description.is_empty() {
-                                        div().text_color(palette.faint).child("Description")
-                                    } else {
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .text_color(palette.muted)
-                                            .child(task.description.clone())
+                                    // As in Todoist, the icon marks only the empty placeholder; a
+                                    // description starts where the name does.
+                                    .when(task.description.is_empty(), |d| {
+                                        d.child(
+                                            Icon::new(Lucide::TextAlignStart)
+                                                .small()
+                                                .mt(px(3.))
+                                                .text_color(palette.faint),
+                                        )
+                                        .child(div().text_color(palette.faint).child("Description"))
+                                    })
+                                    .when(!task.description.is_empty(), |d| {
+                                        d.child(
+                                            div()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .text_color(palette.muted)
+                                                .debug_selector(|| {
+                                                    "overview-description-text".into()
+                                                })
+                                                .child(task.description.clone()),
+                                        )
                                     })
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.edit_overview(true, window, cx)
