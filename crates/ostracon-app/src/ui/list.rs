@@ -18,7 +18,7 @@ use super::actions::{Complete, Delete, Edit, NewSubtask, OpenOverview, shortcut}
 use super::theme::{self, CHECKBOX, INDENT, META_TEXT, Palette, TASK_TEXT};
 use super::workspace::{DraggedTasks, DropHover, Workspace};
 use crate::format;
-use crate::state::{DropTarget, ListItem};
+use crate::state::{AppState, DropTarget, ListItem};
 
 /// The list's left edge to the checkbox: room for the chevrons hanging in the margin.
 const GUTTER: f32 = 40.;
@@ -64,11 +64,10 @@ impl Workspace {
                     .hover(|d| d.text_color(palette.accent))
                     .child(Icon::new(Lucide::Plus).small().text_color(palette.accent))
                     .child("Add task")
-                    .on_click(
-                        cx.listener(|this, _, window, cx| {
-                            this.act(window, cx, |s| s.start_adding())
-                        }),
-                    )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.act(window, cx, |s| s.start_adding())
+                    }))
                     .into_any_element(),
             );
         }
@@ -105,9 +104,16 @@ impl Workspace {
                         let target = this.state.drop_target(&drag.ids, hover.gap, hover.depth);
                         this.act(window, cx, |s| s.drop_tasks(&drag.ids, target));
                     }))
+                    // A click that reaches the list itself, outside any row or control, clears the selection.
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        if !this.state.selection.is_empty() {
+                            this.act(window, cx, AppState::clear_selection);
+                        }
+                    }))
                     .flex_1()
                     .overflow_y_scroll()
                     .track_scroll(&self.list_scroll)
+                    .test_support()
                     .child(
                         div()
                             .flex()
@@ -159,6 +165,8 @@ impl Workspace {
                 }
                 ListItem::Composer { depth, .. } => self.composer.as_ref().map(|composer| {
                     div()
+                        .id("list-composer")
+                        .on_click(|_, _, cx| cx.stop_propagation())
                         .pl(px(GUTTER + depth as f32 * INDENT - 4.))
                         .py_2()
                         .child(composer.clone())
@@ -514,6 +522,7 @@ impl Workspace {
                 }),
             )
             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                cx.stop_propagation();
                 this.click_row(id, event, window, cx)
             }))
             // A right click acts on the selection if it lands inside it, otherwise selects just this row, as in

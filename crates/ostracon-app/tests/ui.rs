@@ -382,6 +382,40 @@ fn right_click_menu_selects_the_row_and_deletes_it(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn clicking_the_list_outside_the_rows_clears_the_selection(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    use gpui_kit::{Modifiers, point, px};
+    let (workspace, cx) = open(cx, |repo| {
+        for name in ["A", "B"] {
+            repo.add_task(NewTask {
+                name: name.into(),
+                ..Default::default()
+            })
+            .unwrap();
+        }
+    });
+    let (a, b) = workspace.read_with(cx, |w, _| (w.state.rows()[0].id(), w.state.rows()[1].id()));
+    cx.simulate_keystrokes("j shift-down");
+    cx.run_until_parked();
+    assert_eq!(
+        workspace.read_with(cx, |w, _| w.state.acting_on(None)),
+        [a, b]
+    );
+
+    // ⌘-clicking a row changes the selection rather than clearing it.
+    cx.update(|window, cx| {
+        window.click_with_modifiers(("task", b.0 as usize), Modifiers::secondary_key(cx), cx)
+    });
+    cx.run_until_parked();
+    assert_eq!(workspace.read_with(cx, |w, _| w.state.acting_on(None)), [a]);
+
+    // The padding above the header.
+    cx.update(|window, cx| window.click_at("task-list", point(px(8.), px(8.)), cx));
+    cx.run_until_parked();
+    assert!(workspace.read_with(cx, |w, _| w.state.selection.is_empty()));
+}
+
+#[gpui_kit::test]
 fn escape_closes_an_overview_picker_then_the_overview(cx: &mut TestAppContext) {
     use gpui_kit::test::TestWindowExt as _;
     let (workspace, cx) = open(cx, |repo| {
