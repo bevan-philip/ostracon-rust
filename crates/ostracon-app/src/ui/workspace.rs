@@ -1,7 +1,9 @@
 //! The window's root view. It owns the [`AppState`] and turns its state types into views: after every change
 //! [`Workspace::sync`] creates or drops the composer, overview and dialog inputs so they match the state.
 
+use std::cell::Cell;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
@@ -11,6 +13,7 @@ use ostracon_core::{ProjectColor, TaskId};
 
 use super::actions::*;
 use super::composer::{ComposerEvent, ComposerSeed, ComposerView};
+use super::overlays::{DESCRIPTION_LINE, DESCRIPTION_MAX_ROWS, DESCRIPTION_PAD_Y};
 use super::pickers::{DatePicker, PickerEvent, ReminderEditor};
 use super::quick_add::{QuickAddEvent, QuickAddInput};
 use crate::platform::{NotificationResponse, Notifier, Permission};
@@ -54,6 +57,9 @@ pub struct OverviewInputs {
     pub task: TaskId,
     /// The name and description, while they are open for editing.
     pub editor: Option<OverviewEditor>,
+    /// How tall the description was last drawn outside the editor. The editor's description can't tell how many
+    /// rows its text needs until it has been laid out once, so it opens this tall rather than one row.
+    pub description_height: Rc<Cell<Pixels>>,
     pub picker: OverviewPicker,
     pub _subscriptions: Vec<Subscription>,
 }
@@ -64,6 +70,8 @@ pub struct OverviewEditor {
     pub description: Entity<TextareaState>,
     /// What they held then, to tell whether leaving would lose anything.
     baseline: (Draft, String),
+    /// Whether the description has been laid out, and so can size itself to its text.
+    pub description_sized: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -330,6 +338,7 @@ impl Workspace {
             self.overview = wanted.map(|task| OverviewInputs {
                 task,
                 editor: None,
+                description_height: Rc::default(),
                 picker: OverviewPicker::Closed,
                 _subscriptions: Vec::new(),
             });
@@ -379,9 +388,13 @@ impl Workspace {
             QuickAddInput::new(draft.clone(), projects, "Task name", cx)
                 .with_text_size(px(20.), px(28.))
         });
+        let rows = self.overview.as_ref().map_or(1, |o| {
+            let text = f32::from(o.description_height.get()) - 2. * DESCRIPTION_PAD_Y;
+            (text / DESCRIPTION_LINE).round() as usize
+        });
         let description = cx.new(|cx| {
             TextareaState::new(window, cx)
-                .auto_grow(1, 12)
+                .auto_grow(rows.clamp(1, DESCRIPTION_MAX_ROWS), DESCRIPTION_MAX_ROWS)
                 .placeholder("Description")
                 .default_value(task.description.clone())
         });
@@ -403,6 +416,7 @@ impl Workspace {
             name,
             description,
             baseline: (draft, task.description.clone()),
+            description_sized: false,
             _subscriptions: subscriptions,
         })
     }

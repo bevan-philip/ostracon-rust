@@ -24,6 +24,12 @@ const MODAL_TOP: f32 = 72.;
 const OVERVIEW_CHECK_GAP: f32 = 6.;
 /// The overview's name input's own left padding, so its text lines up with what's below.
 const OVERVIEW_INPUT_PAD: f32 = 8.;
+/// The overview's description's line height and its padding above and below, outside the editor as inside, so
+/// it doesn't shift when editing starts.
+pub const DESCRIPTION_LINE: f32 = 20.;
+pub const DESCRIPTION_PAD_Y: f32 = 2.;
+/// The most rows the overview editor's description grows to before it scrolls.
+pub const DESCRIPTION_MAX_ROWS: usize = 12;
 /// Above and below the name and description inside the overview's editor.
 const OVERVIEW_EDITOR_PAD_Y: f32 = 6.;
 
@@ -159,7 +165,6 @@ impl Workspace {
         let suggestions = editor
             .as_ref()
             .and_then(|(name, _)| name.update(cx, |name, cx| name.render_suggestions(palette, cx)));
-        let can_save = self.can_save_overview(cx);
         let (date_picker, reminder_editor) = match &overview.picker {
             OverviewPicker::Closed => (None, None),
             OverviewPicker::Date(p) => (Some(p.clone().into_any_element()), None),
@@ -297,8 +302,8 @@ impl Workspace {
                             name,
                             description,
                             suggestions,
-                            can_save,
                             palette,
+                            window,
                             cx,
                         ),
                         None => div()
@@ -322,14 +327,16 @@ impl Workspace {
                             .child(
                                 div()
                                     .id("overview-description")
+                                    .relative()
+                                    .debug_selector(|| "overview-description".into())
                                     .flex()
                                     .items_start()
                                     .gap_2()
-                                    .mt_1()
                                     .px(px(OVERVIEW_INPUT_PAD))
+                                    .py(px(DESCRIPTION_PAD_Y))
                                     .cursor_text()
                                     .text_size(px(14.))
-                                    .line_height(px(22.))
+                                    .line_height(px(DESCRIPTION_LINE))
                                     // As in Todoist, the icon marks only the empty placeholder; a
                                     // description starts where the name does.
                                     .when(task.description.is_empty(), |d| {
@@ -352,6 +359,15 @@ impl Workspace {
                                                 })
                                                 .child(task.description.clone()),
                                         )
+                                    })
+                                    .child({
+                                        let height = overview.description_height.clone();
+                                        canvas(
+                                            move |bounds, _, _| height.set(bounds.size.height),
+                                            |_, _, _, _| {},
+                                        )
+                                        .absolute()
+                                        .size_full()
                                     })
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.edit_overview(true, window, cx)
@@ -638,11 +654,29 @@ impl Workspace {
         name: Entity<QuickAddInput>,
         description: Entity<TextareaState>,
         suggestions: Option<AnyElement>,
-        can_save: bool,
         palette: &Palette,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let can_save = self.can_save_overview(cx);
         let empty = description.read(cx).value().is_empty();
+        // The description opened as many rows tall as it was outside the editor. Once it has been laid out it
+        // knows its own height, so it can shrink to fit again.
+        let opening = self
+            .overview
+            .as_ref()
+            .and_then(|o| o.editor.as_ref())
+            .is_some_and(|e| !e.description_sized);
+        if opening {
+            cx.on_next_frame(window, |this, _, cx| {
+                if let Some(editor) = this.overview.as_mut().and_then(|o| o.editor.as_mut()) {
+                    editor.description_sized = true;
+                    editor
+                        .description
+                        .update(cx, |d, cx| d.set_auto_grow(1, DESCRIPTION_MAX_ROWS, cx));
+                }
+            });
+        }
         div()
             .flex_1()
             .min_w_0()
@@ -689,13 +723,19 @@ impl Workspace {
                             })
                             .child(
                                 // A multi-line input pads its text inside, whatever its own padding says.
-                                div().flex_1().min_w_0().ml(-Size::Small.input_px()).child(
-                                    Textarea::new(&description)
-                                        .appearance(false)
-                                        .small()
-                                        .text_size(px(14.))
-                                        .text_color(palette.muted),
-                                ),
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    // Wrapping at the same width as outside the editor, too.
+                                    .mx(-Size::Small.input_px())
+                                    .debug_selector(|| "overview-editor-description".into())
+                                    .child(
+                                        Textarea::new(&description)
+                                            .appearance(false)
+                                            .small()
+                                            .text_size(px(14.))
+                                            .text_color(palette.muted),
+                                    ),
                             ),
                     ),
             )

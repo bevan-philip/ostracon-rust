@@ -724,3 +724,28 @@ fn the_overview_editor_shows_the_description_icon_only_while_it_is_empty(cx: &mu
         "it comes back once the description is empty again"
     );
 }
+
+#[gpui_kit::test]
+fn the_overview_description_keeps_its_size_when_editing_starts(cx: &mut TestAppContext) {
+    // The editor opens its description as many rows tall as it was drawn outside it, as it can't measure its
+    // own text until it has been laid out; that only holds while both wrap and space their lines alike.
+    let (workspace, cx) = open(cx, |repo| {
+        repo.add_task(NewTask {
+            name: "A".into(),
+            description: "Bring the agenda, the minutes and the budget. ".repeat(10),
+            ..Default::default()
+        })
+        .unwrap();
+    });
+    cx.simulate_keystrokes("j secondary-o");
+    cx.run_until_parked();
+    let shown = cx.debug_bounds("overview-description").unwrap();
+    workspace.update_in(cx, |w, window, cx| w.edit_overview(true, window, cx));
+    cx.run_until_parked();
+    let editing = cx.debug_bounds("overview-editor-description").unwrap();
+    assert!(
+        shown.size.height > gpui_kit::px(100.),
+        "it wraps: {shown:?}"
+    );
+    assert_eq!(editing.size, shown.size);
+}
