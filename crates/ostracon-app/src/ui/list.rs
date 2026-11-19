@@ -13,7 +13,7 @@ use jiff::ZonedDateTime;
 use ostracon_core::TaskId;
 use ostracon_core::tree::TaskRow;
 
-use super::actions::{Complete, Delete, Edit, NewSubtask, OpenOverview};
+use super::actions::{Complete, Delete, Edit, NewSubtask, OpenOverview, shortcut};
 use super::theme::{self, CHECKBOX, INDENT, META_TEXT, Palette, TASK_TEXT};
 use super::workspace::{DraggedTasks, DropHover, Workspace};
 use crate::format;
@@ -286,7 +286,7 @@ impl Workspace {
                     } else {
                         "Show completed"
                     })
-                    .tooltip("⇧⌘C")
+                    .tooltip(shortcut("shift-secondary-c", cx))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.act(window, cx, |s| s.set_show_completed(!s.show_completed))
                     })),
@@ -653,7 +653,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let modifiers = event.modifiers();
-        if modifiers.platform {
+        if modifiers.secondary(cx) {
             self.act(window, cx, |s| s.toggle_selection(id));
         } else if modifiers.shift {
             self.act(window, cx, |s| s.extend_selection_to(id));

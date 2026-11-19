@@ -139,6 +139,8 @@ claude mcp add ostracon -- /Applications/Ostracon.app/Contents/MacOS/ostracon-mc
 | | Esc | Close |
 | Overview | ↑ ↓ | Previous or next task |
 
+On Windows and Linux, Ctrl takes the place of ⌘ and Alt of ⌥.
+
 ## Layout
 
 ```

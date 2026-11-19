@@ -9,6 +9,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use ostracon_core::Project;
 
+use super::actions::shortcut;
 use super::theme::{self, SIDEBAR_WIDTH};
 use super::workspace::{DraggedTasks, Panel, Workspace};
 
@@ -59,7 +60,10 @@ impl Workspace {
                                     .ghost()
                                     .xsmall()
                                     .icon(Icon::new(Lucide::Plus))
-                                    .tooltip("New project (⇧⌘N)")
+                                    .tooltip(format!(
+                                        "New project ({})",
+                                        shortcut("shift-secondary-n", cx)
+                                    ))
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.act(window, cx, |s| s.start_new_project());
                                     })),
@@ -167,8 +171,11 @@ impl Workspace {
             })
             .when(index < 9, |d| {
                 d.tooltip(move |window, cx| {
-                    gpui_kit::component::tooltip::Tooltip::new(format!("⌘{}", index + 1))
-                        .build(window, cx)
+                    gpui_kit::component::tooltip::Tooltip::new(shortcut(
+                        &format!("secondary-{}", index + 1),
+                        cx,
+                    ))
+                    .build(window, cx)
                 })
             });
         if project.is_inbox {

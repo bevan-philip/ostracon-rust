@@ -13,6 +13,7 @@ use ostracon_core::dates::DateParser;
 use ostracon_core::quickadd::{self, BlockValue, Draft};
 use ostracon_core::{Project, ProjectId};
 
+use super::actions::key;
 use super::theme::{self, TASK_TEXT};
 
 gpui_kit::actions!(
@@ -50,30 +51,48 @@ const CONTEXT: &str = "QuickAdd";
 
 pub fn bind_keys(cx: &mut App) {
     let c = Some(CONTEXT);
+    // Moving and deleting by word or to the ends of the line follow each OS's own text fields.
+    if cx.platform_info().is_mac() {
+        cx.bind_keys([
+            KeyBinding::new("alt-backspace", DeleteWordBackward, c),
+            KeyBinding::new("cmd-backspace", DeleteToStart, c),
+            KeyBinding::new("alt-left", WordLeft, c),
+            KeyBinding::new("alt-right", WordRight, c),
+            KeyBinding::new("alt-shift-left", SelectWordLeft, c),
+            KeyBinding::new("alt-shift-right", SelectWordRight, c),
+            KeyBinding::new("cmd-left", Home, c),
+            KeyBinding::new("cmd-right", End, c),
+            KeyBinding::new("cmd-shift-left", SelectHome, c),
+            KeyBinding::new("cmd-shift-right", SelectEnd, c),
+        ]);
+    } else {
+        cx.bind_keys([
+            KeyBinding::new("ctrl-backspace", DeleteWordBackward, c),
+            KeyBinding::new("ctrl-left", WordLeft, c),
+            KeyBinding::new("ctrl-right", WordRight, c),
+            KeyBinding::new("ctrl-shift-left", SelectWordLeft, c),
+            KeyBinding::new("ctrl-shift-right", SelectWordRight, c),
+            KeyBinding::new("shift-home", SelectHome, c),
+            KeyBinding::new("shift-end", SelectEnd, c),
+        ]);
+    }
+    let bindings = [
+        key("secondary-a", SelectAll, c, cx),
+        key("secondary-v", Paste, c, cx),
+        key("secondary-c", Copy, c, cx),
+        key("secondary-x", Cut, c, cx),
+    ];
+    cx.bind_keys(bindings);
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, c),
         KeyBinding::new("shift-backspace", Backspace, c),
         KeyBinding::new("delete", DeleteForward, c),
-        KeyBinding::new("alt-backspace", DeleteWordBackward, c),
-        KeyBinding::new("cmd-backspace", DeleteToStart, c),
         KeyBinding::new("left", Left, c),
         KeyBinding::new("right", Right, c),
-        KeyBinding::new("alt-left", WordLeft, c),
-        KeyBinding::new("alt-right", WordRight, c),
         KeyBinding::new("shift-left", SelectLeft, c),
         KeyBinding::new("shift-right", SelectRight, c),
-        KeyBinding::new("alt-shift-left", SelectWordLeft, c),
-        KeyBinding::new("alt-shift-right", SelectWordRight, c),
-        KeyBinding::new("cmd-a", SelectAll, c),
-        KeyBinding::new("cmd-left", Home, c),
         KeyBinding::new("home", Home, c),
-        KeyBinding::new("cmd-right", End, c),
         KeyBinding::new("end", End, c),
-        KeyBinding::new("cmd-shift-left", SelectHome, c),
-        KeyBinding::new("cmd-shift-right", SelectEnd, c),
-        KeyBinding::new("cmd-v", Paste, c),
-        KeyBinding::new("cmd-c", Copy, c),
-        KeyBinding::new("cmd-x", Cut, c),
         KeyBinding::new("enter", Submit, c),
         KeyBinding::new("escape", Cancel, c),
         KeyBinding::new("up", SuggestionUp, c),

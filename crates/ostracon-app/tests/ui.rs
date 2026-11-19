@@ -112,13 +112,13 @@ fn list_keyboard_flow(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("j j tab");
     cx.run_until_parked();
     assert_eq!(names(&workspace, cx), ["A", "  B", "C"]);
-    cx.simulate_keystrokes("shift-tab k alt-cmd-down");
+    cx.simulate_keystrokes("shift-tab k alt-secondary-down");
     cx.run_until_parked();
     assert_eq!(names(&workspace, cx), ["B", "A", "C"]);
     cx.simulate_keystrokes("space");
     cx.run_until_parked();
     assert_eq!(names(&workspace, cx), ["B", "C"]);
-    cx.simulate_keystrokes("cmd-z");
+    cx.simulate_keystrokes("secondary-z");
     cx.run_until_parked();
     assert_eq!(names(&workspace, cx), ["B", "A", "C"]);
     cx.simulate_keystrokes("backspace");
@@ -172,7 +172,7 @@ fn editing_in_place_and_the_overview(cx: &mut TestAppContext) {
     );
     assert_eq!(task.due, None);
 
-    cx.simulate_keystrokes("cmd-o");
+    cx.simulate_keystrokes("secondary-o");
     cx.run_until_parked();
     assert_eq!(
         workspace.read_with(cx, |w, _| w.state.overview),
@@ -371,7 +371,7 @@ fn escape_closes_an_overview_picker_then_the_overview(cx: &mut TestAppContext) {
         })
         .unwrap();
     });
-    cx.simulate_keystrokes("j cmd-o");
+    cx.simulate_keystrokes("j secondary-o");
     cx.run_until_parked();
     for button in ["overview-date", "overview-reminders"] {
         cx.update(|window, cx| window.click(button, cx));
@@ -398,7 +398,7 @@ fn the_overview_adds_subtasks_with_the_full_composer(cx: &mut TestAppContext) {
         })
         .unwrap();
     });
-    cx.simulate_keystrokes("j cmd-o");
+    cx.simulate_keystrokes("j secondary-o");
     cx.run_until_parked();
     cx.update(|window, cx| window.click("overview-add-subtask", cx));
     cx.run_until_parked();
@@ -445,7 +445,7 @@ fn a_subtask_overview_opens_its_parent(cx: &mut TestAppContext) {
     let (a, b) = workspace.read_with(cx, |w, _| {
         (w.state.rows()[0].task.id, w.state.rows()[1].task.id)
     });
-    cx.simulate_keystrokes("j j cmd-o");
+    cx.simulate_keystrokes("j j secondary-o");
     cx.run_until_parked();
     assert_eq!(workspace.read_with(cx, |w, _| w.state.overview), Some(b));
     cx.update(|window, cx| window.click("overview-parent", cx));
@@ -465,7 +465,7 @@ fn deleting_from_the_overview(cx: &mut TestAppContext) {
             .unwrap();
         }
     });
-    cx.simulate_keystrokes("j cmd-o");
+    cx.simulate_keystrokes("j secondary-o");
     cx.run_until_parked();
     cx.update(|window, cx| window.click("overview-more", cx));
     cx.run_until_parked();
@@ -494,7 +494,7 @@ fn the_overview_name_reads_a_project_typed_into_it(cx: &mut TestAppContext) {
             .unwrap();
         }
     });
-    cx.simulate_keystrokes("j cmd-o");
+    cx.simulate_keystrokes("j secondary-o");
     cx.run_until_parked();
     cx.update(|window, cx| {
         let name = workspace.read(cx).overview.as_ref().unwrap().name.clone();

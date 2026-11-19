@@ -44,53 +44,68 @@ gpui_kit::actions!(
 const LIST: &str = "TaskList && !QuickAdd && !Input";
 
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys([
-        KeyBinding::new("cmd-q", Quit, None),
-        KeyBinding::new("cmd-n", NewTask, None),
-        KeyBinding::new("alt-cmd-n", NewSubtask, None),
-        KeyBinding::new("shift-cmd-n", NewProject, None),
-        KeyBinding::new("shift-cmd-c", ToggleShowCompleted, None),
-        KeyBinding::new("cmd-o", OpenOverview, None),
-        KeyBinding::new("cmd-,", OpenSettings, None),
-        KeyBinding::new("cmd-1", Project1, None),
-        KeyBinding::new("cmd-2", Project2, None),
-        KeyBinding::new("cmd-3", Project3, None),
-        KeyBinding::new("cmd-4", Project4, None),
-        KeyBinding::new("cmd-5", Project5, None),
-        KeyBinding::new("cmd-6", Project6, None),
-        KeyBinding::new("cmd-7", Project7, None),
-        KeyBinding::new("cmd-8", Project8, None),
-        KeyBinding::new("cmd-9", Project9, None),
-        KeyBinding::new("a", NewTask, Some(LIST)),
-        KeyBinding::new("q", NewTask, Some(LIST)),
-        KeyBinding::new("shift-a", NewSubtask, Some(LIST)),
-        KeyBinding::new("cmd-z", Undo, Some(LIST)),
-        KeyBinding::new("down", SelectNext, Some(LIST)),
-        KeyBinding::new("j", SelectNext, Some(LIST)),
-        KeyBinding::new("up", SelectPrevious, Some(LIST)),
-        KeyBinding::new("k", SelectPrevious, Some(LIST)),
-        KeyBinding::new("shift-down", ExtendNext, Some(LIST)),
-        KeyBinding::new("shift-up", ExtendPrevious, Some(LIST)),
-        KeyBinding::new("left", CollapseOrParent, Some(LIST)),
-        KeyBinding::new("right", Expand, Some(LIST)),
-        KeyBinding::new("space", Complete, Some(LIST)),
-        KeyBinding::new("cmd-enter", Complete, Some(LIST)),
-        KeyBinding::new("enter", Edit, Some(LIST)),
-        KeyBinding::new("cmd-e", Edit, Some(LIST)),
-        KeyBinding::new("tab", Indent, Some(LIST)),
-        KeyBinding::new("cmd-]", Indent, Some(LIST)),
-        KeyBinding::new("shift-tab", Outdent, Some(LIST)),
-        KeyBinding::new("cmd-[", Outdent, Some(LIST)),
-        KeyBinding::new("alt-cmd-up", MoveUp, Some(LIST)),
-        KeyBinding::new("alt-cmd-down", MoveDown, Some(LIST)),
-        KeyBinding::new("backspace", Delete, Some(LIST)),
-        KeyBinding::new("delete", Delete, Some(LIST)),
-        KeyBinding::new("escape", Escape, Some(LIST)),
+    let bindings = [
+        key("secondary-q", Quit, None, cx),
+        key("secondary-n", NewTask, None, cx),
+        key("alt-secondary-n", NewSubtask, None, cx),
+        key("shift-secondary-n", NewProject, None, cx),
+        key("shift-secondary-c", ToggleShowCompleted, None, cx),
+        key("secondary-o", OpenOverview, None, cx),
+        key("secondary-,", OpenSettings, None, cx),
+        key("secondary-1", Project1, None, cx),
+        key("secondary-2", Project2, None, cx),
+        key("secondary-3", Project3, None, cx),
+        key("secondary-4", Project4, None, cx),
+        key("secondary-5", Project5, None, cx),
+        key("secondary-6", Project6, None, cx),
+        key("secondary-7", Project7, None, cx),
+        key("secondary-8", Project8, None, cx),
+        key("secondary-9", Project9, None, cx),
+        key("a", NewTask, Some(LIST), cx),
+        key("q", NewTask, Some(LIST), cx),
+        key("shift-a", NewSubtask, Some(LIST), cx),
+        key("secondary-z", Undo, Some(LIST), cx),
+        key("down", SelectNext, Some(LIST), cx),
+        key("j", SelectNext, Some(LIST), cx),
+        key("up", SelectPrevious, Some(LIST), cx),
+        key("k", SelectPrevious, Some(LIST), cx),
+        key("shift-down", ExtendNext, Some(LIST), cx),
+        key("shift-up", ExtendPrevious, Some(LIST), cx),
+        key("left", CollapseOrParent, Some(LIST), cx),
+        key("right", Expand, Some(LIST), cx),
+        key("space", Complete, Some(LIST), cx),
+        key("secondary-enter", Complete, Some(LIST), cx),
+        key("enter", Edit, Some(LIST), cx),
+        key("secondary-e", Edit, Some(LIST), cx),
+        key("tab", Indent, Some(LIST), cx),
+        key("secondary-]", Indent, Some(LIST), cx),
+        key("shift-tab", Outdent, Some(LIST), cx),
+        key("secondary-[", Outdent, Some(LIST), cx),
+        key("alt-secondary-up", MoveUp, Some(LIST), cx),
+        key("alt-secondary-down", MoveDown, Some(LIST), cx),
+        key("backspace", Delete, Some(LIST), cx),
+        key("delete", Delete, Some(LIST), cx),
+        key("escape", Escape, Some(LIST), cx),
         // Modal layers: the overview steps between tasks, dialogs confirm and cancel.
-        KeyBinding::new("escape", Escape, Some("Modal")),
-        KeyBinding::new("up", SelectPrevious, Some("Overview && !Input")),
-        KeyBinding::new("down", SelectNext, Some("Overview && !Input")),
-        KeyBinding::new("enter", Confirm, Some("Dialog && !Input")),
-    ]);
+        key("escape", Escape, Some("Modal"), cx),
+        key("up", SelectPrevious, Some("Overview && !Input"), cx),
+        key("down", SelectNext, Some("Overview && !Input"), cx),
+        key("enter", Confirm, Some("Dialog && !Input"), cx),
+    ];
+    cx.bind_keys(bindings);
     crate::ui::quick_add::bind_keys(cx);
+}
+
+/// A key binding for the running OS. `secondary` is Cmd on macOS and Ctrl elsewhere; `KeyBinding::new` can't
+/// resolve it, as it doesn't know the OS.
+pub fn key(keys: &str, action: impl Action, context: Option<&str>, cx: &App) -> KeyBinding {
+    let context = context.map(|c| KeyBindingContextPredicate::parse(c).unwrap().into());
+    KeyBinding::load(keys, Box::new(action), context, false, None, cx).unwrap()
+}
+
+/// How a shortcut written for [`key`] reads on this OS: `shift-secondary-c` is ⇧⌘C on macOS, Ctrl+Shift+C
+/// elsewhere.
+pub fn shortcut(keys: &str, cx: &App) -> String {
+    let stroke = Keystroke::parse_with_os(keys, cx.platform_info().os).unwrap();
+    gpui_kit::component::kbd::Kbd::format(&stroke)
 }
