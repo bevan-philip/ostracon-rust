@@ -483,7 +483,8 @@ impl Workspace {
         }
     }
 
-    /// ⌘-click toggles, ⇧-click extends, and a plain click opens the overview, as in Todoist.
+    /// ⌘-click toggles, ⇧-click extends, and a plain click opens the overview, as in Todoist. An open composer
+    /// closes for it, unless that would lose what's in it: then the click hands it back the keyboard.
     fn click_row(
         &mut self,
         id: TaskId,
@@ -496,12 +497,16 @@ impl Workspace {
             self.act(window, cx, |s| s.toggle_selection(id));
         } else if modifiers.shift {
             self.act(window, cx, |s| s.extend_selection_to(id));
+        } else if let Some(composer) = self
+            .composer
+            .as_ref()
+            .filter(|c| self.state.composer.is_in_list() && c.read(cx).has_changes(cx))
+        {
+            composer.update(cx, |c, cx| c.focus(window, cx));
         } else {
             self.act(window, cx, |s| {
                 s.select_only(id);
-                if !s.composer.is_in_list() {
-                    s.open_overview(id);
-                }
+                s.open_overview(id);
             });
         }
     }

@@ -43,7 +43,18 @@ pub struct ComposerView {
     /// What the name says, refreshed as it changes.
     parsed: QuickAddResult,
     picker: Picker,
+    /// What it held when opened or last reset, to tell whether anything would be lost by closing it.
+    baseline: Baseline,
     _subscriptions: Vec<Subscription>,
+}
+
+#[derive(PartialEq)]
+struct Baseline {
+    draft: Draft,
+    description: String,
+    project: ProjectId,
+    due: Option<Due>,
+    reminders: Vec<Reminder>,
 }
 
 /// What the composer starts with.
@@ -66,6 +77,13 @@ impl ComposerView {
         let placeholder = match seed.mode {
             Mode::Editing { .. } => "Task name",
             _ => "Task name, e.g. Pay rent tomorrow 9am #Home !1h",
+        };
+        let baseline = Baseline {
+            draft: seed.draft.clone(),
+            description: seed.description.clone(),
+            project: seed.project,
+            due: seed.due,
+            reminders: seed.reminders.clone(),
         };
         let name = cx.new(|cx| QuickAddInput::new(seed.draft, projects.clone(), placeholder, cx));
         let description = cx.new(|cx| {
@@ -101,6 +119,7 @@ impl ComposerView {
                 due_text: None,
             },
             picker: Picker::Closed,
+            baseline,
             _subscriptions: subscriptions,
         };
         view.reparse(cx);
@@ -131,6 +150,21 @@ impl ComposerView {
         &self.reminders
     }
 
+    /// Whether closing it now would lose anything typed or picked.
+    pub fn has_changes(&self, cx: &App) -> bool {
+        self.current(cx) != self.baseline
+    }
+
+    fn current(&self, cx: &App) -> Baseline {
+        Baseline {
+            draft: self.draft(cx),
+            description: self.description(cx),
+            project: self.project,
+            due: self.due,
+            reminders: self.reminders.clone(),
+        }
+    }
+
     pub fn set_projects(&mut self, projects: Vec<Project>, cx: &mut Context<Self>) {
         self.projects = projects.clone();
         self.name.update(cx, |name, _| name.set_projects(projects));
@@ -145,6 +179,7 @@ impl ComposerView {
         self.due = None;
         self.reminders.clear();
         self.picker = Picker::Closed;
+        self.baseline = self.current(cx);
         self.focus(window, cx);
         cx.notify();
     }
