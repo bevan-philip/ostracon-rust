@@ -586,6 +586,24 @@ fn the_overview_name_reads_a_project_typed_into_it(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn the_overview_removes_a_tasks_date(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let (workspace, cx) = open(cx, |repo| {
+        repo.add_task(NewTask {
+            name: "A".into(),
+            due: Some(Due::day(jiff::civil::date(2026, 11, 20))),
+            ..Default::default()
+        })
+        .unwrap();
+    });
+    cx.simulate_keystrokes("j secondary-o");
+    cx.run_until_parked();
+    cx.update(|window, cx| window.click("overview-date-clear", cx));
+    cx.run_until_parked();
+    assert_eq!(workspace.read_with(cx, |w, _| w.state.tasks()[0].due), None);
+}
+
+#[gpui_kit::test]
 fn overview_side_values_sit_flush_with_their_labels(cx: &mut TestAppContext) {
     let (workspace, cx) = open(cx, |repo| {
         let project = repo

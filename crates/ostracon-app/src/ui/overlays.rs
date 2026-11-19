@@ -1,7 +1,7 @@
 //! Everything drawn above the list: the task overview, dialogs, settings and the toast.
 
 use gpui_kit::assets::IconName as Lucide;
-use gpui_kit::component::button::{Button, ButtonGroup, ButtonVariants as _};
+use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonGroup, ButtonVariants as _};
 use gpui_kit::component::input::{Input, Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::text::TextView;
@@ -527,13 +527,37 @@ impl Workspace {
                 Some(add_button("overview-date", "Add date").on_click(open_date)),
             ),
             Some((label, color)) => section("Date", None).child(
-                side_value(
-                    Button::new("overview-date"),
-                    Icon::new(Lucide::Calendar).text_color(color),
-                    label,
-                )
-                .text_color(color)
-                .on_click(open_date),
+                div()
+                    .flex()
+                    .self_stretch()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        side_value(
+                            Button::new("overview-date"),
+                            Icon::new(Lucide::Calendar).text_color(color),
+                            label,
+                        )
+                        .text_color(color)
+                        .on_click(open_date),
+                    )
+                    .child(
+                        Button::new("overview-date-clear")
+                            .custom(
+                                ButtonCustomVariant::new(cx)
+                                    .color(transparent_black())
+                                    .foreground(palette.muted)
+                                    .hover(palette.overdue.opacity(0.15))
+                                    .active(palette.overdue.opacity(0.25)),
+                            )
+                            .small()
+                            .icon(Icon::new(Lucide::X))
+                            .tooltip("Remove date")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.close_overview_picker(window, cx);
+                                this.act(window, cx, |s| s.set_due_of_only(id, None));
+                            })),
+                    ),
             ),
         };
         let reminders_section = section(
