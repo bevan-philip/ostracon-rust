@@ -1,10 +1,16 @@
 # Ostracon
 
+## The human summary before the slop
+- Truthfully, I love Todoist, and will continue to be a paying customer.
+- I love it so much that my inability to use it at work was irritating me. I just wanted a local to-do list app, with similar UX to Todoist.
+- So, this does that. Again, I'm never going to use this in a personal capacity. 
+
+## Description
+
 A local, Todoist-style to-do list for a work machine where Todoist can't be used. Everything stays in one
 SQLite file on the machine: no accounts, no cloud.
 
-This is the Rust rewrite of [the Swift version](https://github.com/bevan-philip/ostracon). The app uses
-[GPUI](https://gpui.rs) through gpui-kit; the CLI and MCP server share its core and its database.
+The app uses [GPUI](https://gpui.rs) through gpui-kit; the CLI and MCP server share its core and its database.
 
 - **Inbox** plus your own colour-coded **projects**
 - **Quick add**: `#Project` anywhere (multi-word names work, with autocomplete), Todoist-style dates
