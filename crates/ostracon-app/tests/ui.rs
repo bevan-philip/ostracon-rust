@@ -214,6 +214,41 @@ fn dragging_a_task_onto_a_project_moves_it(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn dragging_a_task_within_the_list_reorders_and_nests_it(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    use gpui_kit::{point, px};
+    let (workspace, cx) = open(cx, |repo| {
+        for name in ["A", "B", "C"] {
+            repo.add_task(NewTask {
+                name: name.into(),
+                ..Default::default()
+            })
+            .unwrap();
+        }
+    });
+    let ids = workspace.read_with(cx, |w, _| {
+        w.state.rows().iter().map(|r| r.id()).collect::<Vec<_>>()
+    });
+    let row = |id: ostracon_core::TaskId| ("task", id.0 as usize);
+    // Onto the top half of A: straight above it.
+    cx.update(|window, cx| window.drag_to(row(ids[2]), row(ids[0]), cx));
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["C", "A", "B"]);
+
+    // Onto the bottom half of A, and an indent's width to the right: a subtask of A.
+    let (from, to) = cx.update(|window, _| {
+        (
+            window.find(row(ids[1])).bounds().center(),
+            window.find(row(ids[0])).bounds(),
+        )
+    });
+    let to = point(from.x + px(28.), to.bottom() - px(4.));
+    cx.update(|window, cx| window.drag(from, to, cx));
+    cx.run_until_parked();
+    assert_eq!(names(&workspace, cx), ["C", "A", "  B"]);
+}
+
+#[gpui_kit::test]
 fn right_click_menu_selects_the_row_and_deletes_it(cx: &mut TestAppContext) {
     use gpui_kit::test::TestWindowExt as _;
     let (workspace, cx) = open(cx, |repo| {

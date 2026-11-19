@@ -13,9 +13,9 @@ use ostracon_core::tree::TaskRow;
 
 use super::actions::{Complete, Delete, Edit, NewSubtask, OpenOverview};
 use super::theme::{self, CHECKBOX, INDENT, META_TEXT, Palette, TASK_TEXT};
-use super::workspace::{DraggedTasks, Workspace};
+use super::workspace::{DraggedTasks, DropHover, Workspace};
 use crate::format;
-use crate::state::ListItem;
+use crate::state::{Composer, DropTarget, ListItem};
 
 /// The list's left edge to the checkbox: room for the chevrons hanging in the margin.
 const GUTTER: f32 = 40.;
@@ -28,12 +28,22 @@ impl Workspace {
         let items = self.state.list_items();
         let show_completed = self.state.show_completed;
         let empty = self.state.rows().is_empty() && !self.state.composer.is_in_list();
+        let row_count = self.state.rows().len();
+        let drop = self.drop_target(cx);
 
         let mut rows: Vec<AnyElement> = Vec::new();
+        // Each task's index in the outline, which the composer may stand in for.
+        let mut index = 0;
         for item in items {
             match item {
-                ListItem::Task(row) => rows.push(self.render_row(&row, &now, &palette, cx)),
-                ListItem::Composer { depth, .. } => {
+                ListItem::Task(row) => {
+                    rows.push(self.render_row(&row, index, drop, &now, &palette, cx));
+                    index += 1;
+                }
+                ListItem::Composer { mode, depth } => {
+                    if matches!(mode, Composer::Editing { .. }) {
+                        index += 1;
+                    }
                     if let Some(composer) = &self.composer {
                         rows.push(
                             div()
@@ -46,10 +56,23 @@ impl Workspace {
                 }
             }
         }
+        if let Some(target) = drop.filter(|t| t.before.is_none()) {
+            rows.push(
+                div()
+                    .relative()
+                    .child(drop_line(&palette, target.depth))
+                    .into_any_element(),
+            );
+        }
         if !self.state.composer.is_in_list() {
             rows.push(
                 div()
                     .id("add-task")
+                    .on_drag_move(cx.listener(
+                        move |this, event: &DragMoveEvent<DraggedTasks>, _, cx| {
+                            this.hover_gap(event, row_count, cx)
+                        },
+                    ))
                     .flex()
                     .items_center()
                     .gap_2p5()
@@ -79,6 +102,22 @@ impl Workspace {
             .child(
                 div()
                     .id("task-list")
+                    .on_drag_move(cx.listener(
+                        |this, event: &DragMoveEvent<DraggedTasks>, _, cx| {
+                            if !event.bounds.contains(&event.event.position)
+                                && this.drop_hover.take().is_some()
+                            {
+                                cx.notify();
+                            }
+                        },
+                    ))
+                    .on_drop(cx.listener(|this, drag: &DraggedTasks, window, cx| {
+                        let Some(hover) = this.drop_hover.take() else {
+                            return;
+                        };
+                        let target = this.state.drop_target(&drag.ids, hover.gap, hover.depth);
+                        this.act(window, cx, |s| s.drop_tasks(&drag.ids, target));
+                    }))
                     .flex_1()
                     .overflow_y_scroll()
                     .track_scroll(&self.list_scroll)
@@ -114,6 +153,37 @@ impl Workspace {
                             }),
                     ),
             )
+    }
+
+    /// Where the dragged tasks would land, while they are dragged over the list.
+    fn drop_target(&self, cx: &App) -> Option<DropTarget> {
+        let hover = self.drop_hover.as_ref().filter(|_| cx.has_active_drag())?;
+        Some(self.state.drop_target(&hover.ids, hover.gap, hover.depth))
+    }
+
+    /// Notes that the dragged tasks are over the gap before row `gap`. Dragging sideways from where the drag
+    /// began asks for one level deeper or shallower for every indent's width.
+    fn hover_gap(
+        &mut self,
+        event: &DragMoveEvent<DraggedTasks>,
+        gap: usize,
+        cx: &mut Context<Self>,
+    ) {
+        let position = event.event.position;
+        if !event.bounds.contains(&position) {
+            return;
+        }
+        let (start, depth) = self.drag_origin.unwrap_or((position.x, 0));
+        let shift = ((position.x - start) / px(INDENT)).round() as isize;
+        let hover = DropHover {
+            ids: event.drag(cx).ids.clone(),
+            gap,
+            depth: depth as isize + shift,
+        };
+        if self.drop_hover.as_ref() != Some(&hover) {
+            self.drop_hover = Some(hover);
+            cx.notify();
+        }
     }
 
     fn render_header(
@@ -196,6 +266,8 @@ impl Workspace {
     fn render_row(
         &self,
         row: &TaskRow,
+        index: usize,
+        drop: Option<DropTarget>,
         now: &ZonedDateTime,
         palette: &Palette,
         cx: &mut Context<Self>,
@@ -205,6 +277,12 @@ impl Workspace {
         let selected = self.state.selection.contains(id);
         let completed = task.is_completed();
         let indent = row.depth as f32 * INDENT;
+        let depth = row.depth;
+        let dragged = drop.is_some()
+            && self
+                .drop_hover
+                .as_ref()
+                .is_some_and(|h| h.ids.contains(&id));
 
         let chevron = row.has_children().then(|| {
             let collapsed = task.collapsed;
@@ -330,7 +408,7 @@ impl Workspace {
             .next()
             .map(str::to_owned)
             .filter(|d| !d.is_empty());
-        let dragged = {
+        let drag = {
             let ids = self.state.acting_on(Some(id));
             let label: SharedString = if ids.len() > 1 {
                 format!("{} tasks", ids.len()).into()
@@ -348,10 +426,27 @@ impl Workspace {
             .when(selected, |d| d.bg(palette.row_selected))
             .when(!selected, |d| d.hover(|d| d.bg(palette.row_hover)))
             .rounded_md()
+            .when(dragged, |d| d.opacity(0.4))
+            .when_some(drop.filter(|t| t.before == Some(id)), |d, target| {
+                d.child(drop_line(palette, target.depth))
+            })
             // The drop target receives this value, not the preview view, so it must carry the ids.
-            .on_drag(dragged, |drag: &DraggedTasks, _, _, cx| {
+            .on_drag(drag, |drag: &DraggedTasks, _, _, cx| {
                 cx.new(|_| drag.clone())
             })
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, event: &MouseDownEvent, _, _| {
+                    this.drag_origin = Some((event.position.x, depth));
+                }),
+            )
+            // The lower half of a row is the gap below it.
+            .on_drag_move(
+                cx.listener(move |this, event: &DragMoveEvent<DraggedTasks>, _, cx| {
+                    let lower = event.event.position.y > event.bounds.center().y;
+                    this.hover_gap(event, index + usize::from(lower), cx)
+                }),
+            )
             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                 this.click_row(id, event, window, cx)
             }))
@@ -513,6 +608,18 @@ impl Workspace {
             });
         }
     }
+}
+
+/// Where dropped tasks would go: a line along the top of the row they would go above, `depth` levels in.
+fn drop_line(palette: &Palette, depth: usize) -> Div {
+    div()
+        .absolute()
+        .top(px(-1.))
+        .left(px(GUTTER + depth as f32 * INDENT - 4.))
+        .right_0()
+        .h(px(2.))
+        .rounded_full()
+        .bg(palette.accent)
 }
 
 fn banner(palette: &Palette, background: Hsla, text: Hsla) -> Div {

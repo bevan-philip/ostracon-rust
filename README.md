@@ -14,7 +14,7 @@ This is the Rust rewrite of [the Swift version](https://github.com/bevan-philip/
   standup". An existing task's name is never re-read when you edit it.
 - **Nested tasks**: indent, outdent, reorder, collapse; parents show "1/2" and "1 completed hidden"
 - **Keyboard first**: Return saves and opens the composer for the next task
-- **Multi-select** with ⌘-click, ⇧-click and ⇧-arrows; **drag** tasks onto a sidebar project
+- **Multi-select** with ⌘-click, ⇧-click and ⇧-arrows; **drag** tasks to reorder them (sideways to nest or un-nest) or onto a sidebar project
 - **Task overview**: click a task for its description, sub-tasks, project, date and reminders
 - **Notifications** at each reminder and at due times (macOS), with a Complete button
 - **Backups** to a synced folder such as OneDrive, never exposing a half-written file

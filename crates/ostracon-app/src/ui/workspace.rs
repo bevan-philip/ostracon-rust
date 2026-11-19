@@ -16,7 +16,7 @@ use super::quick_add::{QuickAddEvent, QuickAddInput};
 use crate::platform::{NotificationResponse, Notifier, Permission};
 use crate::state::{AppState, Composer, Dialog};
 
-/// Tasks being dragged onto a project in the sidebar.
+/// Tasks being dragged within the list or onto a project in the sidebar.
 #[derive(Clone)]
 pub struct DraggedTasks {
     pub ids: Vec<TaskId>,
@@ -38,6 +38,15 @@ impl Render for DraggedTasks {
             .text_color(palette.text)
             .child(self.label.clone())
     }
+}
+
+/// Where the pointer is while tasks are dragged over the list: the gap before row `gap`, and how many levels
+/// in it asks for. [`AppState::drop_target`] turns it into where they would land.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DropHover {
+    pub ids: Vec<TaskId>,
+    pub gap: usize,
+    pub depth: isize,
 }
 
 /// The open task overview's fields.
@@ -77,6 +86,10 @@ pub struct Workspace {
     pub project_color: ProjectColor,
     pub panel: Panel,
     pub list_scroll: ScrollHandle,
+    /// Where the last press on a row was, and that row's depth: dragging sideways from here nests or un-nests.
+    pub drag_origin: Option<(Pixels, usize)>,
+    /// Only meaningful while a drag is active; a drag that ends elsewhere leaves it behind.
+    pub drop_hover: Option<DropHover>,
     pub toast_timer: Option<(u64, Task<()>)>,
     pub sidebar_scroll: ScrollHandle,
     _tasks: Vec<Task<()>>,
@@ -103,6 +116,8 @@ impl Workspace {
             project_color: ProjectColor::Charcoal,
             panel: Panel::None,
             list_scroll: ScrollHandle::new(),
+            drag_origin: None,
+            drop_hover: None,
             toast_timer: None,
             sidebar_scroll: ScrollHandle::new(),
             _tasks: Vec::new(),
