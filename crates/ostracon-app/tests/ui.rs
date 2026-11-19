@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use gpui_kit::component::{Root, Theme};
 use gpui_kit::{AppContext as _, Entity, Hsla, TestAppContext, VisualTestContext, rgb};
-use ostracon_app::state::{AppState, Composer, Dialog};
+use ostracon_app::state::{AppState, Composer, Dialog, View};
 use ostracon_app::ui::{actions, theme, workspace::Workspace};
 use ostracon_core::settings::{Appearance, Scheme};
 use ostracon_core::{Due, NewTask, ProjectColor, Repository};
@@ -878,4 +878,43 @@ fn every_vendored_scheme_has_a_light_and_a_dark_theme(cx: &mut TestAppContext) {
             assert_eq!(palette.page, background, "{scheme:?} {appearance:?}");
         }
     }
+}
+
+#[gpui_kit::test]
+fn today_from_the_keyboard_adds_tasks_due_today(cx: &mut TestAppContext) {
+    let (workspace, cx) = open(cx, |_| {});
+    cx.simulate_keystrokes("g t");
+    cx.run_until_parked();
+    assert_eq!(workspace.read_with(cx, |w, _| w.state.view), View::Today);
+
+    cx.simulate_keystrokes("a");
+    cx.simulate_input("Call mum");
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input("Water plants");
+    cx.simulate_keystrokes("enter escape");
+    cx.run_until_parked();
+    assert_eq!(
+        names(&workspace, cx),
+        ["Call mum", "Water plants"],
+        "the next task is due today too"
+    );
+}
+
+#[gpui_kit::test]
+fn dragging_a_task_onto_today_schedules_it(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let (workspace, cx) = open(cx, |repo| {
+        repo.add_task(NewTask {
+            name: "Water plants".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    });
+    let task = workspace.read_with(cx, |w, _| w.state.rows()[0].id());
+    cx.update(|window, cx| window.drag_to(("task", task.0 as usize), "today", cx));
+    cx.run_until_parked();
+    let (due, today) = workspace.read_with(cx, |w, _| {
+        (w.state.task(task).unwrap().due, w.state.now().date())
+    });
+    assert_eq!(due, Some(Due::day(today)));
 }

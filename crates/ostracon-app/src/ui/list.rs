@@ -1,5 +1,6 @@
 //! The task list: a flat, Todoist-style outline with hairline dividers that start at the checkbox, disclosure
-//! chevrons hanging in the left margin, and the composer inline where it belongs.
+//! chevrons hanging in the left margin, and the composer inline where it belongs. Today's has no outline: its
+//! overdue tasks and today's go under headings, each with its project.
 
 use std::time::Duration;
 
@@ -18,7 +19,7 @@ use super::actions::{Complete, Delete, Edit, NewSubtask, OpenOverview, shortcut}
 use super::theme::{self, CHECKBOX, INDENT, META_TEXT, Palette, TASK_TEXT};
 use super::workspace::{DraggedTasks, DropHover, Workspace};
 use crate::format;
-use crate::state::{AppState, DropTarget, ListItem};
+use crate::state::{AppState, DropTarget, ListItem, View};
 
 /// The list's left edge to the checkbox: room for the chevrons hanging in the margin.
 const GUTTER: f32 = 40.;
@@ -33,9 +34,27 @@ impl Workspace {
         let empty = self.state.rows().is_empty() && !self.state.composer.is_in_list();
         let outline_len = self.state.outline().len();
         let drop = self.drop_target(cx);
+        let today = self.state.view == View::Today;
 
-        // Open tasks, with "Add task" after them, then completed ones, as in Todoist.
-        let mut rows = self.render_items(items.outline, drop, &now, &palette, cx);
+        // Open tasks, with "Add task" after them, then completed ones, as in Todoist. Today puts the overdue
+        // ones first, and when there are any, heads both sections.
+        let mut rows = Vec::new();
+        if !items.overdue.is_empty() {
+            rows.push(section_heading(&palette, "Overdue".into()).into_any_element());
+            rows.extend(self.render_items(items.overdue, drop, &now, &palette, cx));
+            rows.push(
+                section_heading(
+                    &palette,
+                    format!(
+                        "{} · Today · {}",
+                        now.strftime("%-d %b"),
+                        now.strftime("%A")
+                    ),
+                )
+                .into_any_element(),
+            );
+        }
+        rows.extend(self.render_items(items.outline, drop, &now, &palette, cx));
         if let Some(target) = drop.filter(|t| t.before.is_none()) {
             rows.push(
                 div()
@@ -140,7 +159,11 @@ impl Workspace {
                                             div()
                                                 .text_size(px(13.5))
                                                 .text_color(palette.muted)
-                                                .child("Press A or Q to add a task. Try \"Pay rent tomorrow 9am #Home\"."),
+                                                .child(if today {
+                                                    "Nothing is due today. Press A or Q to add a task for today."
+                                                } else {
+                                                    "Press A or Q to add a task. Try \"Pay rent tomorrow 9am #Home\"."
+                                                }),
                                         ),
                                 )
                             }),
@@ -233,7 +256,8 @@ impl Workspace {
     }
 
     /// Notes that the dragged tasks are over the gap before row `gap`. Dragging sideways from where the drag
-    /// began asks for one level deeper or shallower for every indent's width.
+    /// began asks for one level deeper or shallower for every indent's width. Only a project's outline takes
+    /// dropped tasks; in Today they can only be dragged to the sidebar.
     fn hover_gap(
         &mut self,
         event: &DragMoveEvent<DraggedTasks>,
@@ -241,7 +265,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let position = event.event.position;
-        if !event.bounds.contains(&position) {
+        if !event.bounds.contains(&position) || self.state.view == View::Today {
             return;
         }
         let (start, depth) = self.drag_origin.unwrap_or((position.x, 0));
@@ -263,11 +287,14 @@ impl Workspace {
         show_completed: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let name = self
-            .state
-            .current_project()
-            .map(|p| p.name.clone())
-            .unwrap_or_default();
+        let name = match self.state.view {
+            View::Today => "Today".to_owned(),
+            View::Project(_) => self
+                .state
+                .current_project()
+                .map(|p| p.name.clone())
+                .unwrap_or_default(),
+        };
         div()
             .flex()
             .items_center()
@@ -419,8 +446,15 @@ impl Workspace {
                 this.act(window, cx, |s| s.toggle_completed_of(&[id]));
             }));
 
+        let today = self.state.view == View::Today;
         let mut meta: Vec<AnyElement> = Vec::new();
-        if let Some(due) = task.due {
+        // Today's section needs no "Today" on every task, only the time of those that have one.
+        let due_label = task.due.and_then(|due| match due.time {
+            _ if !today || due.days_from(now) != 0 => Some(format::due_label(due, now)),
+            Some(time) => Some(time.strftime("%H:%M").to_string()),
+            None => None,
+        });
+        if let (Some(due), Some(label)) = (task.due, due_label) {
             let color = if completed {
                 palette.faint
             } else {
@@ -433,7 +467,7 @@ impl Workspace {
                     .gap_1()
                     .text_color(color)
                     .child(Icon::new(Lucide::Calendar).xsmall())
-                    .child(format::due_label(due, now))
+                    .child(label)
                     .into_any_element(),
             );
         }
@@ -464,11 +498,33 @@ impl Workspace {
                     .into_any_element(),
             );
         }
+        // Today never shows subtasks beneath their parent, so none are hidden there.
         let hidden = row.hidden_completed_count();
-        if hidden > 0 && !self.state.show_completed {
+        if hidden > 0 && !self.state.show_completed && !today {
             meta.push(
                 div()
                     .child(format!("{hidden} completed hidden"))
+                    .into_any_element(),
+            );
+        }
+        // Today gathers tasks from every project, so each says which it is in, at the right as in Todoist.
+        if today && let Some(project) = self.state.project_by_id(task.project_id) {
+            meta.push(
+                div()
+                    .ml_auto()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(project.name.clone())
+                    .child(
+                        Icon::new(if project.is_inbox {
+                            Lucide::Inbox
+                        } else {
+                            Lucide::Hash
+                        })
+                        .xsmall()
+                        .text_color(theme::project_color(project.color)),
+                    )
                     .into_any_element(),
             );
         }
@@ -718,6 +774,20 @@ fn drop_line(palette: &Palette, depth: usize) -> Div {
         .h(px(2.))
         .rounded_full()
         .bg(palette.accent)
+}
+
+/// A heading over a section of Today's list.
+fn section_heading(palette: &Palette, text: String) -> Div {
+    div()
+        .ml(px(GUTTER))
+        .mt_4()
+        .pb_1p5()
+        .border_b_1()
+        .border_color(palette.hairline)
+        .text_size(px(14.))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(palette.text)
+        .child(text)
 }
 
 fn banner(palette: &Palette, background: Hsla, text: Hsla) -> Div {

@@ -1,5 +1,5 @@
-//! The sidebar: the Inbox and projects, with coloured icons and counts, drawn large so they are easy to click
-//! and to drop tasks onto.
+//! The sidebar: the Inbox, Today and projects, with coloured icons and counts, drawn large so they are easy to
+//! click and to drop tasks onto.
 
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -12,6 +12,7 @@ use ostracon_core::Project;
 use super::actions::shortcut;
 use super::theme::{self, SIDEBAR_WIDTH};
 use super::workspace::{DraggedTasks, Panel, Workspace};
+use crate::state::View;
 
 impl Workspace {
     pub fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -40,6 +41,7 @@ impl Workspace {
                     .overflow_y_scroll()
                     .track_scroll(&self.sidebar_scroll)
                     .children(inbox.iter().map(|p| self.render_project_row(p, 0, cx)))
+                    .child(self.render_today_row(cx))
                     .child(
                         div()
                             .flex()
@@ -105,6 +107,32 @@ impl Workspace {
             )
     }
 
+    /// Today, as in Todoist: tasks dropped on it are due today.
+    fn render_today_row(&self, cx: &mut Context<Self>) -> AnyElement {
+        let palette = theme::palette(cx);
+        let selected = self.state.view == View::Today;
+        let count = self.state.today_count();
+        sidebar_row(&palette, selected, palette.today)
+            .id("today")
+            .on_drop(cx.listener(|this, drag: &DraggedTasks, window, cx| {
+                let ids = drag.ids.clone();
+                this.act(window, cx, |s| s.schedule_for_today(&ids));
+            }))
+            .on_click(cx.listener(|this, _, window, cx| this.act(window, cx, |s| s.select_today())))
+            .child(
+                Icon::new(Lucide::CalendarDays)
+                    .text_color(palette.today)
+                    .small(),
+            )
+            .child(div().flex_1().child("Today"))
+            .when(count > 0, |d| d.child(row_count(&palette, count)))
+            .tooltip(|window, cx| {
+                gpui_kit::component::tooltip::Tooltip::new("G then T").build(window, cx)
+            })
+            .test_support()
+            .into_any_element()
+    }
+
     fn render_project_row(
         &self,
         project: &Project,
@@ -112,7 +140,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let palette = theme::palette(cx);
-        let selected = project.id == self.state.project;
+        let selected = self.state.view == View::Project(project.id);
         let count = self.state.open_count(project.id);
         let id = project.id;
         let color = theme::project_color(project.color);
@@ -121,28 +149,8 @@ impl Workspace {
         } else {
             Icon::new(Lucide::Hash)
         };
-        let row = div()
+        let row = sidebar_row(&palette, selected, color)
             .id(("project", id.0 as usize))
-            .flex()
-            .items_center()
-            .gap_2p5()
-            .h(px(38.))
-            .px_2()
-            .rounded_md()
-            .cursor_pointer()
-            .text_size(px(14.5))
-            .text_color(palette.text)
-            .when(selected, |d| {
-                d.bg(palette.sidebar_selected)
-                    .font_weight(FontWeight::MEDIUM)
-            })
-            .when(!selected, |d| d.hover(|d| d.bg(palette.sidebar_hover)))
-            .drag_over::<DraggedTasks>(move |style, _, _, _| {
-                style
-                    .bg(palette.sidebar_selected)
-                    .border_1()
-                    .border_color(color)
-            })
             .on_drop(cx.listener(move |this, drag: &DraggedTasks, window, cx| {
                 let ids = drag.ids.clone();
                 this.act(window, cx, |s| {
@@ -161,14 +169,7 @@ impl Workspace {
                     .whitespace_nowrap()
                     .child(project.name.clone()),
             )
-            .when(count > 0, |d| {
-                d.child(
-                    div()
-                        .text_size(px(12.5))
-                        .text_color(palette.faint)
-                        .child(count.to_string()),
-                )
-            })
+            .when(count > 0, |d| d.child(row_count(&palette, count)))
             .when(index < 9, |d| {
                 d.tooltip(move |window, cx| {
                     gpui_kit::component::tooltip::Tooltip::new(shortcut(
@@ -205,4 +206,37 @@ impl Workspace {
             })
             .into_any_element()
     }
+}
+
+/// A row in the sidebar, highlighted in `color` while tasks are dragged over it.
+fn sidebar_row(palette: &theme::Palette, selected: bool, color: Hsla) -> Div {
+    let palette = *palette;
+    div()
+        .flex()
+        .items_center()
+        .gap_2p5()
+        .h(px(38.))
+        .px_2()
+        .rounded_md()
+        .cursor_pointer()
+        .text_size(px(14.5))
+        .text_color(palette.text)
+        .when(selected, |d| {
+            d.bg(palette.sidebar_selected)
+                .font_weight(FontWeight::MEDIUM)
+        })
+        .when(!selected, |d| d.hover(|d| d.bg(palette.sidebar_hover)))
+        .drag_over::<DraggedTasks>(move |style, _, _, _| {
+            style
+                .bg(palette.sidebar_selected)
+                .border_1()
+                .border_color(color)
+        })
+}
+
+fn row_count(palette: &theme::Palette, count: usize) -> Div {
+    div()
+        .text_size(px(12.5))
+        .text_color(palette.faint)
+        .child(count.to_string())
 }

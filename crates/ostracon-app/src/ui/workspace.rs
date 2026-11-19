@@ -225,6 +225,7 @@ impl Workspace {
 
     fn tick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut changed = self.state.reload_if_changed_elsewhere();
+        changed |= self.state.refresh_if_day_changed();
         let responses = self
             .notifier
             .as_ref()
@@ -292,8 +293,12 @@ impl Workspace {
                 project: wanted
                     .parent()
                     .and_then(|p| self.state.task(p))
-                    .map_or(self.state.project, |t| t.project_id),
-                due: None,
+                    .map_or(self.state.home_project(), |t| t.project_id),
+                due: if wanted.is_in_list() {
+                    self.state.default_due()
+                } else {
+                    None
+                },
                 reminders: Vec::new(),
             },
             Composer::Editing { task } => {
@@ -752,6 +757,10 @@ impl Workspace {
         }
     }
 
+    fn go_to_today(&mut self, _: &GoToToday, window: &mut Window, cx: &mut Context<Self>) {
+        self.act(window, cx, AppState::select_today);
+    }
+
     fn select_project(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.act(window, cx, |s| s.select_project_at(index));
     }
@@ -897,6 +906,7 @@ impl Workspace {
             .on_action(cx.listener(Self::open_overview))
             .on_action(cx.listener(Self::open_settings))
             .on_action(cx.listener(Self::undo))
+            .on_action(cx.listener(Self::go_to_today))
             .on_action(cx.listener(|this, _: &Project1, w, cx| this.select_project(0, w, cx)))
             .on_action(cx.listener(|this, _: &Project2, w, cx| this.select_project(1, w, cx)))
             .on_action(cx.listener(|this, _: &Project3, w, cx| this.select_project(2, w, cx)))

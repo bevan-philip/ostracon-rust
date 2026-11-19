@@ -1,7 +1,7 @@
 use jiff::ZonedDateTime;
 use jiff::civil::{date, time};
 use ostracon_app::state::{
-    AppState, Composer, Dialog, DropTarget, ListItem, ProjectDraft, Selection, Undo,
+    AppState, Composer, Dialog, DropTarget, ListItem, ProjectDraft, Selection, Undo, View,
 };
 use ostracon_core::quickadd::Draft;
 use ostracon_core::settings::{Appearance, Scheme};
@@ -29,7 +29,7 @@ fn add_outline(state: &mut AppState, outline: &str) -> Vec<TaskId> {
             .repository()
             .add_task(NewTask {
                 name: line.trim().into(),
-                project_id: Some(state.project),
+                project_id: Some(state.home_project()),
                 parent_id: stack.last().copied(),
                 ..Default::default()
             })
@@ -69,7 +69,7 @@ fn adding_keeps_the_composer_open_and_files_by_project() {
         .unwrap();
     state.reload();
     state.start_adding();
-    let inbox = state.project;
+    let inbox = state.home_project();
     assert!(state.submit_composer(&typed("Write report tomorrow 5pm"), "", inbox, None, &[]));
     assert_eq!(
         state.composer,
@@ -103,7 +103,7 @@ fn editing_never_rereads_the_name() {
     state.start_editing(Some(ids[0]));
     assert_eq!(state.composer, Composer::Editing { task: ids[0] });
     let draft = Draft::from_text("Plan monday standup", true);
-    let project = state.project;
+    let project = state.home_project();
     assert!(state.submit_composer(&draft, "Notes", project, None, &[]));
     assert_eq!(state.composer, Composer::Closed);
     let task = state.task(ids[0]).unwrap();
@@ -146,7 +146,7 @@ fn the_overview_name_reads_what_is_typed_into_it() {
     assert!(state.save_overview(ids[0], &typed("#Inbox "), "Notes"));
     let task = state.task(ids[0]).unwrap();
     assert_eq!(task.name, "Plan monday standup");
-    assert_eq!(task.project_id, state.project);
+    assert_eq!(task.project_id, state.home_project());
 }
 
 #[test]
@@ -160,7 +160,7 @@ fn subtask_composer_sits_after_the_parents_subtasks() {
         matches!(items.outline[2], ListItem::Composer { depth: 1, .. }),
         "{items:?}"
     );
-    let project = state.project;
+    let project = state.home_project();
     assert!(state.submit_composer(&typed("D"), "", project, None, &[]));
     assert_eq!(shown(&state), ["A", " B", " D", "C"]);
 }
@@ -184,7 +184,7 @@ fn the_overview_adds_subtasks_with_the_full_composer() {
         "the composer is in the overview, not the list"
     );
 
-    let project = state.project;
+    let project = state.home_project();
     assert!(state.submit_composer(&typed("D tomorrow"), "Notes", project, None, &[]));
     assert_eq!(shown(&state), ["A", " B", " D", "C"], "the parent opens");
     let added = state.subtasks(ids[0])[1];
@@ -557,11 +557,11 @@ fn a_deleted_project_returns_to_the_inbox() {
         "Work",
         "a new project is shown"
     );
-    let work = state.project;
+    let work = state.home_project();
     state.request_delete_project(work);
     state.confirm_dialog();
     assert_eq!(state.current_project().unwrap().name, "Inbox");
-    let inbox = state.project;
+    let inbox = state.home_project();
     state.request_delete_project(inbox);
     assert_eq!(state.dialog, Dialog::None, "the Inbox can't be deleted");
 }
@@ -679,7 +679,7 @@ fn revealing_a_task_from_a_notification() {
     state.repository().set_collapsed(parent.id, true).unwrap();
     state.reload();
     state.reveal(child.id);
-    assert_eq!(state.project, work.id);
+    assert_eq!(state.view, View::Project(work.id));
     assert_eq!(state.selection.anchor(), Some(child.id));
     state.complete_from_notification(child.id);
     assert!(state.task(child.id).unwrap().is_completed());
@@ -688,7 +688,7 @@ fn revealing_a_task_from_a_notification() {
 #[test]
 fn notifications_for_reminders_and_due_times() {
     let mut state = state();
-    let project = state.project;
+    let project = state.home_project();
     state.start_adding();
     state.submit_composer(
         &typed("Call bank friday 3pm !30min"),
@@ -784,4 +784,209 @@ fn failed_writes_leave_state_alone() {
         "the rename was rolled back with the move"
     );
     assert!(state.error.is_some());
+}
+
+/// Adds a task due `due` to `project`, or the Inbox.
+fn add_due(
+    state: &mut AppState,
+    name: &str,
+    project: Option<ProjectId>,
+    due: Option<Due>,
+) -> TaskId {
+    let id = state
+        .repository()
+        .add_task(NewTask {
+            name: name.into(),
+            project_id: project,
+            due,
+            ..Default::default()
+        })
+        .unwrap()
+        .id;
+    state.reload();
+    id
+}
+
+fn names(items: &[ListItem]) -> Vec<String> {
+    items
+        .iter()
+        .map(|item| match item {
+            ListItem::Task { row, .. } => row.task.name.clone(),
+            ListItem::Composer { .. } => "(composer)".into(),
+        })
+        .collect()
+}
+
+#[test]
+fn today_lists_what_is_due_today_and_overdue_from_every_project() {
+    let mut state = state();
+    let work = state
+        .repository()
+        .create_project("Work", ProjectColor::Red)
+        .unwrap();
+    let (yesterday, today, tomorrow) = (date(2026, 1, 13), date(2026, 1, 14), date(2026, 1, 15));
+    add_due(&mut state, "Pay rent", None, Some(Due::day(yesterday)));
+    let report = add_due(&mut state, "Report", Some(work.id), Some(Due::day(today)));
+    add_due(
+        &mut state,
+        "Standup",
+        Some(work.id),
+        Some(Due::at(today, time(9, 0, 0, 0))),
+    );
+    add_due(&mut state, "Later", Some(work.id), Some(Due::day(tomorrow)));
+    add_due(&mut state, "Someday", None, None);
+    // A subtask due today is listed on its own, though its parent isn't due.
+    let parent = add_due(&mut state, "Trip", None, None);
+    state
+        .repository()
+        .add_task(NewTask {
+            name: "Book train".into(),
+            parent_id: Some(parent),
+            due: Some(Due::day(today)),
+            ..Default::default()
+        })
+        .unwrap();
+    state.reload();
+
+    state.select_today();
+    assert_eq!(state.view, View::Today);
+    assert!(state.current_project().is_none());
+    let items = state.list_items();
+    assert_eq!(names(&items.overdue), ["Pay rent"]);
+    assert_eq!(names(&items.outline), ["Standup", "Book train", "Report"]);
+    assert_eq!(state.today_count(), 4);
+
+    // Completing one hands the selection on and, with completed tasks shown, lists it below.
+    state.select_only(report);
+    state.toggle_completed(None);
+    assert_eq!(
+        names(&state.list_items().outline),
+        ["Standup", "Book train"]
+    );
+    assert_eq!(state.today_count(), 3);
+    state.set_show_completed(true);
+    assert_eq!(names(&state.list_items().completed), ["Report"]);
+}
+
+#[test]
+fn adding_in_today_files_to_the_inbox_due_today() {
+    let mut state = state();
+    state.select_today();
+    let inbox = state.home_project();
+    assert_eq!(state.project_by_id(inbox).unwrap().name, "Inbox");
+    let due = state.default_due();
+    assert_eq!(due, Some(Due::day(date(2026, 1, 14))));
+
+    state.start_adding();
+    assert!(state.submit_composer(&typed("Call mum"), "", inbox, due, &[]));
+    assert_eq!(
+        names(&state.list_items().outline),
+        ["Call mum", "(composer)"]
+    );
+    assert!(state.toast.is_none());
+
+    // A date typed in the name wins, and as the task won't show here, a toast says where it went.
+    assert!(state.submit_composer(&typed("Plan trip tomorrow"), "", inbox, due, &[]));
+    assert_eq!(
+        names(&state.list_items().outline),
+        ["Call mum", "(composer)"]
+    );
+    assert_eq!(state.toast.as_ref().unwrap().message, "Task added to Inbox");
+
+    state.select_project(inbox);
+    assert_eq!(state.default_due(), None, "only Today dates new tasks");
+}
+
+#[test]
+fn today_has_no_outline_to_rearrange() {
+    let mut state = state();
+    let today = Some(Due::day(date(2026, 1, 14)));
+    let a = add_due(&mut state, "A", None, today);
+    let b = add_due(&mut state, "B", None, today);
+    state.select_today();
+    state.select_only(b);
+    state.indent(None);
+    state.move_by(None, -1);
+    let target = state.drop_target(&[b], 0, 0);
+    state.drop_tasks(&[b], target);
+    assert_eq!(state.task(b).unwrap().parent_id, None);
+    assert_eq!(shown(&state), ["A", "B"]);
+    assert!(state.task(a).unwrap().position < state.task(b).unwrap().position);
+}
+
+#[test]
+fn the_overview_stays_open_on_a_task_rescheduled_out_of_today() {
+    let mut state = state();
+    let id = add_due(&mut state, "A", None, Some(Due::day(date(2026, 1, 14))));
+    state.select_today();
+    state.open_overview(id);
+    state.set_due_of_only(id, Some(Due::day(date(2026, 1, 15))));
+    assert_eq!(state.overview, Some(id));
+    assert!(!state.is_in_list(id));
+    state.dismiss_overview();
+    assert!(state.rows().is_empty());
+}
+
+#[test]
+fn dropping_on_today_schedules_tasks_for_today_at_their_times() {
+    let mut state = state();
+    let a = add_due(
+        &mut state,
+        "A",
+        None,
+        Some(Due::at(date(2026, 1, 20), time(9, 0, 0, 0))),
+    );
+    let b = add_due(&mut state, "B", None, None);
+    state.schedule_for_today(&[a, b]);
+    assert_eq!(
+        state.task(a).unwrap().due,
+        Some(Due::at(date(2026, 1, 14), time(9, 0, 0, 0)))
+    );
+    assert_eq!(
+        state.task(b).unwrap().due,
+        Some(Due::day(date(2026, 1, 14)))
+    );
+}
+
+#[test]
+fn today_moves_on_at_midnight() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    let clock = Rc::new(RefCell::new(now()));
+    let reading = clock.clone();
+    let mut state = AppState::with_clock(Repository::in_memory().unwrap(), None, move || {
+        reading.borrow().clone()
+    });
+    add_due(&mut state, "A", None, Some(Due::day(date(2026, 1, 15))));
+    state.select_today();
+    assert!(state.rows().is_empty());
+    assert!(!state.refresh_if_day_changed());
+
+    *clock.borrow_mut() = date(2026, 1, 15)
+        .at(0, 0, 1, 0)
+        .in_tz("Europe/London")
+        .unwrap();
+    assert!(state.refresh_if_day_changed());
+    assert_eq!(shown(&state), ["A"]);
+    assert!(!state.refresh_if_day_changed());
+}
+
+#[test]
+fn revealing_a_task_listed_in_today_stays_in_today() {
+    let mut state = state();
+    let work = state
+        .repository()
+        .create_project("Work", ProjectColor::Red)
+        .unwrap();
+    let id = add_due(
+        &mut state,
+        "A",
+        Some(work.id),
+        Some(Due::day(date(2026, 1, 14))),
+    );
+    state.select_today();
+    state.reveal(id);
+    assert_eq!(state.view, View::Today);
+    assert_eq!(state.selection.anchor(), Some(id));
 }

@@ -11,6 +11,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
+use jiff::civil::Date;
 use jiff::{Timestamp, ZonedDateTime};
 use ostracon_core::backup::{BackupFolder, BackupPolicy, timestamp};
 use ostracon_core::dates::DateParser;
@@ -20,6 +21,23 @@ use ostracon_core::schedule::{self, NOTIFICATION_LIMIT};
 use ostracon_core::settings::{Appearance, Scheme, Settings};
 use ostracon_core::tree::{self, TaskRow};
 use ostracon_core::{Due, Project, ProjectColor, ProjectId, Reminder, Repository, Task, TaskId};
+
+/// What the list shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum View {
+    Project(ProjectId),
+    /// The open tasks due today or overdue, from every project, as in Todoist.
+    Today,
+}
+
+impl View {
+    pub fn project(self) -> Option<ProjectId> {
+        match self {
+            View::Project(id) => Some(id),
+            View::Today => None,
+        }
+    }
+}
 
 /// Which tasks are selected. The anchor is where the keyboard acts and where a Shift range starts; it is
 /// always one of `ids`.
@@ -124,17 +142,22 @@ pub struct ProjectDraft {
     pub color: ProjectColor,
 }
 
-/// The list as shown: the outline, which "Add task" follows, then the completed tasks.
+/// The list as shown: in Today the overdue tasks, then the outline, which "Add task" follows, then the
+/// completed tasks.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ListItems {
+    pub overdue: Vec<ListItem>,
     pub outline: Vec<ListItem>,
     pub completed: Vec<ListItem>,
 }
 
 impl ListItems {
-    /// Every item, the outline first.
+    /// Every item, in order.
     pub fn all(&self) -> impl Iterator<Item = &ListItem> {
-        self.outline.iter().chain(&self.completed)
+        self.overdue
+            .iter()
+            .chain(&self.outline)
+            .chain(&self.completed)
     }
 }
 
@@ -208,9 +231,11 @@ pub struct AppState {
     repo: Repository,
     snapshot: Snapshot,
     rows: tree::Rows,
+    /// The day the rows were worked out on, which Today's depend on.
+    day: Date,
     clock: Box<dyn Fn() -> ZonedDateTime>,
 
-    pub project: ProjectId,
+    pub view: View,
     pub show_completed: bool,
     pub selection: Selection,
     pub composer: Composer,
@@ -262,8 +287,9 @@ impl AppState {
             repo,
             snapshot: Snapshot::default(),
             rows: tree::Rows::default(),
+            day: Date::default(),
             clock: Box::new(clock),
-            project: ProjectId(0),
+            view: View::Project(ProjectId(0)),
             show_completed: false,
             selection: Selection::Empty,
             composer: Composer::Closed,
@@ -308,15 +334,43 @@ impl AppState {
         self.snapshot.task(id)
     }
 
+    /// The project on screen; `None` in Today.
     pub fn current_project(&self) -> Option<&Project> {
-        self.project_by_id(self.project)
+        self.project_by_id(self.view.project()?)
+    }
+
+    /// The project new tasks go to: the one on screen, or the Inbox in Today, as in Todoist.
+    pub fn home_project(&self) -> ProjectId {
+        match self.view {
+            View::Project(id) => id,
+            View::Today => self.snapshot.inbox().map_or(ProjectId(0), |p| p.id),
+        }
+    }
+
+    /// The due date the list's composer starts with: today in Today, so what it adds shows there.
+    pub fn default_due(&self) -> Option<Due> {
+        (self.view == View::Today).then(|| Due::day(self.now().date()))
     }
 
     pub fn open_count(&self, project: ProjectId) -> usize {
         tree::open_count(&self.snapshot.tasks, project)
     }
 
-    /// Every row in the list: the outline, then the completed tasks if they're being shown.
+    /// Open tasks due today or overdue, which Today lists.
+    pub fn today_count(&self) -> usize {
+        tree::today_count(&self.snapshot.tasks, &self.now())
+    }
+
+    /// Whether a task in `project` that is due `due` belongs on screen.
+    fn shows(&self, project: ProjectId, due: Option<Due>) -> bool {
+        match self.view {
+            View::Project(id) => id == project,
+            View::Today => due.is_some_and(|d| d.date <= self.day),
+        }
+    }
+
+    /// Every row in the list: in Today the overdue tasks, then the outline, then the completed tasks if they're
+    /// being shown.
     pub fn rows(&self) -> &[TaskRow] {
         self.rows.all()
     }
@@ -380,16 +434,19 @@ impl AppState {
             }
             items
         };
-        let mut outline = section(self.rows.outline(), 0);
+        let overdue = section(self.rows.overdue(), 0);
+        let mut outline = section(self.rows.outline(), overdue.len());
         if self.composer == (Composer::Adding { parent: None }) {
             outline.push(ListItem::Composer {
                 mode: self.composer,
                 depth: 0,
             });
         }
+        let completed_start = self.rows.overdue().len() + self.rows.outline().len();
         ListItems {
+            overdue,
             outline,
-            completed: section(self.rows.completed(), self.rows.outline().len()),
+            completed: section(self.rows.completed(), completed_start),
         }
     }
 
@@ -431,10 +488,20 @@ impl AppState {
     // Navigation
 
     pub fn select_project(&mut self, id: ProjectId) {
-        if id == self.project || self.project_by_id(id).is_none() {
+        if self.project_by_id(id).is_some() {
+            self.show(View::Project(id));
+        }
+    }
+
+    pub fn select_today(&mut self) {
+        self.show(View::Today);
+    }
+
+    fn show(&mut self, view: View) {
+        if view == self.view {
             return;
         }
-        self.project = id;
+        self.view = view;
         self.selection = Selection::Empty;
         self.composer = Composer::Closed;
         self.overview = None;
@@ -663,7 +730,7 @@ impl AppState {
                 if !added {
                     return false;
                 }
-                if target != self.project {
+                if !self.shows(target, due) {
                     let name = self
                         .project_by_id(target)
                         .map(|p| p.name.clone())
@@ -683,7 +750,8 @@ impl AppState {
                     return false;
                 }
                 self.composer = Composer::Closed;
-                if target != self.project {
+                // Today lists tasks from every project, so a move doesn't take one out of it.
+                if self.view.project().is_some_and(|p| p != target) {
                     let name = self
                         .project_by_id(target)
                         .map(|p| p.name.clone())
@@ -725,7 +793,10 @@ impl AppState {
             .kept
             .iter()
             .map(|k| k.task)
-            .filter(|&id| self.task(id).is_some_and(|t| t.project_id != self.project))
+            .filter(|&id| {
+                self.task(id)
+                    .is_some_and(|t| Some(t.project_id) != self.view.project())
+            })
             .collect();
         let fallback = self.selection_after_removing(&gone);
         self.kept.clear();
@@ -887,10 +958,20 @@ impl AppState {
     /// Reschedules a task, or the selection it belongs to, keeping each one's time of day unless `due` brings
     /// its own.
     pub fn set_due(&mut self, id: Option<TaskId>, due: Option<Due>) {
-        let changes: Vec<(TaskId, Option<Due>)> = self
-            .acting_on(id)
-            .into_iter()
-            .map(|id| {
+        let ids = self.acting_on(id);
+        self.set_due_of(&ids, due);
+    }
+
+    /// Tasks dropped on Today in the sidebar: due today, each at its own time.
+    pub fn schedule_for_today(&mut self, ids: &[TaskId]) {
+        let today = Due::day(self.now().date());
+        self.set_due_of(ids, Some(today));
+    }
+
+    fn set_due_of(&mut self, ids: &[TaskId], due: Option<Due>) {
+        let changes: Vec<(TaskId, Option<Due>)> = ids
+            .iter()
+            .map(|&id| {
                 let time = self.task(id).and_then(|t| t.due).and_then(|d| d.time);
                 (
                     id,
@@ -905,11 +986,16 @@ impl AppState {
         });
     }
 
-    /// Shows a task, as when its notification is clicked: switches to its project and expands its ancestors.
+    /// Shows a task, as when its notification is clicked: selects it where it is if Today lists it, and
+    /// otherwise switches to its project and expands its ancestors.
     pub fn reveal(&mut self, id: TaskId) {
         let Some(task) = self.task(id).cloned() else {
             return;
         };
+        if self.view == View::Today && self.is_in_list(id) {
+            self.select_only(id);
+            return;
+        }
         self.select_project(task.project_id);
         let collapsed: Vec<TaskId> = self
             .ancestors(id)
@@ -952,20 +1038,25 @@ impl AppState {
         }
     }
 
+    /// Whether the list is a project's outline, which tasks can be nested and ordered in. Today's isn't.
+    fn is_outline(&self) -> bool {
+        self.view.project().is_some()
+    }
+
     pub fn indent(&mut self, id: Option<TaskId>) {
-        if let Some(id) = id.or(self.selection.anchor()) {
+        if let Some(id) = id.or(self.selection.anchor()).filter(|_| self.is_outline()) {
             self.perform(|repo| repo.indent(id).map(drop));
         }
     }
 
     pub fn outdent(&mut self, id: Option<TaskId>) {
-        if let Some(id) = id.or(self.selection.anchor()) {
+        if let Some(id) = id.or(self.selection.anchor()).filter(|_| self.is_outline()) {
             self.perform(|repo| repo.outdent(id).map(drop));
         }
     }
 
     pub fn move_by(&mut self, id: Option<TaskId>, offset: isize) {
-        if let Some(id) = id.or(self.selection.anchor()) {
+        if let Some(id) = id.or(self.selection.anchor()).filter(|_| self.is_outline()) {
             self.perform(|repo| repo.move_by(id, offset).map(drop));
         }
     }
@@ -989,7 +1080,7 @@ impl AppState {
         if ids.is_empty() {
             return false;
         }
-        let fallback = (!keep && project != self.project)
+        let fallback = (!keep && self.view.project().is_some_and(|p| p != project))
             .then(|| self.selection_after_removing(&ids))
             .flatten();
         // Recorded before the write, as the reload after it would otherwise close the overview; a failed write
@@ -1000,7 +1091,7 @@ impl AppState {
                 .iter()
                 .filter(|&&id| !self.kept.iter().any(|k| k.task == id))
                 .filter_map(|&id| self.task(id))
-                .filter(|t| self.listed_project(t) == self.project)
+                .filter(|t| Some(self.listed_project(t)) == self.view.project())
                 .map(|t| Kept {
                     task: t.id,
                     parent: t.parent_id,
@@ -1073,16 +1164,19 @@ impl AppState {
         }
     }
 
-    /// Drops dragged tasks, with their subtasks, where `target` says.
+    /// Drops dragged tasks, with their subtasks, where `target` says. Only a project's outline takes them.
     pub fn drop_tasks(&mut self, dragged: &[TaskId], target: DropTarget) {
         let ids = self.topmost(dragged);
+        let View::Project(home) = self.view else {
+            return;
+        };
         if ids.is_empty() {
             return;
         }
         let project = target
             .parent
             .and_then(|p| self.task(p))
-            .map_or(self.project, |p| p.project_id);
+            .map_or(home, |p| p.project_id);
         self.perform(|repo| repo.place(&ids, project, target.parent, target.after));
     }
 
@@ -1343,7 +1437,7 @@ impl AppState {
             return;
         }
         if let Some(inbox) = self.snapshot.inbox() {
-            self.project = inbox.id;
+            self.view = View::Project(inbox.id);
         }
         self.selection = Selection::Empty;
         self.composer = Composer::Closed;
@@ -1406,6 +1500,16 @@ impl AppState {
         }
     }
 
+    /// Works Today out again once the day has changed since it last was, as what's due today and overdue
+    /// changes with it. Returns whether it had.
+    pub fn refresh_if_day_changed(&mut self) -> bool {
+        if self.now().date() == self.day {
+            return false;
+        }
+        self.reconcile();
+        true
+    }
+
     pub fn reload(&mut self) {
         match self.repo.snapshot() {
             Ok(snapshot) => self.snapshot = snapshot,
@@ -1416,18 +1520,20 @@ impl AppState {
 
     /// Brings everything that refers to a project or task back in line with what exists and is shown:
     ///
-    /// - The project on screen exists, or the Inbox is shown instead.
+    /// - The project on screen exists, or the Inbox is shown instead. Today always does.
     /// - Selected tasks are rows in the list; one that left it hands its place to the collapsed parent hiding
     ///   it, as in Finder, or leaves the selection.
     /// - The composer edits, or adds a subtask to, a task that is a row, or adds one to the overview's task.
     /// - The overview and dialogs refer to projects and tasks that still exist, and its editor is open only
-    ///   with it. A discard dialog stays while there is still something to discard: the overview's editor, or
+    ///   with it. In a project the overview's task is one of its own, or one the overview keeps; Today shows
+    ///   any task's, as it lists them from every project and they come and go as they are rescheduled. A discard dialog stays while there is still something to discard: the overview's editor, or
     ///   the composer in the list with the task to open still a row.
     pub fn reconcile(&mut self) {
-        if self.current_project().is_none()
+        if self.view != View::Today
+            && self.current_project().is_none()
             && let Some(inbox) = self.snapshot.inbox()
         {
-            self.project = inbox.id;
+            self.view = View::Project(inbox.id);
             self.selection = Selection::Empty;
             self.composer = Composer::Closed;
         }
@@ -1489,8 +1595,10 @@ impl AppState {
 
         self.kept.retain(|k| self.snapshot.task(k.task).is_some());
         if self.overview.is_some_and(|id| {
-            self.task(id)
-                .is_none_or(|t| self.listed_project(t) != self.project)
+            self.task(id).is_none_or(|t| match self.view {
+                View::Project(project) => self.listed_project(t) != project,
+                View::Today => false,
+            })
         }) {
             self.close_overview();
         }
@@ -1531,8 +1639,19 @@ impl AppState {
         if self.overview.is_none() {
             self.kept.clear();
         }
+        let now = self.now();
+        self.day = now.date();
+        let View::Project(project) = self.view else {
+            self.rows = tree::today_rows(
+                &self.snapshot.tasks,
+                &self.snapshot.projects,
+                &now,
+                self.show_completed,
+            );
+            return;
+        };
         self.rows = if self.kept.is_empty() {
-            tree::rows(&self.snapshot.tasks, self.project, self.show_completed)
+            tree::rows(&self.snapshot.tasks, project, self.show_completed)
         } else {
             let parents: HashMap<TaskId, Option<TaskId>> = self
                 .snapshot
@@ -1565,23 +1684,26 @@ impl AppState {
                         task.position = kept.position;
                     }
                     if in_kept_subtree(task.id) {
-                        task.project_id = self.project;
+                        task.project_id = project;
                     }
                     task
                 })
                 .collect();
-            tree::rows(&tasks, self.project, self.show_completed)
+            tree::rows(&tasks, project, self.show_completed)
         };
     }
 
     /// The project whose list shows `task`: the current one for a task the overview keeps, or a subtask of
-    /// one, and otherwise its own.
+    /// one, and otherwise its own. Only a project's list keeps tasks.
     fn listed_project(&self, task: &Task) -> ProjectId {
         let kept = |id: TaskId| self.kept.iter().any(|k| k.task == id);
-        if kept(task.id) || self.ancestors(task.id).into_iter().any(kept) {
-            self.project
-        } else {
-            task.project_id
+        match self.view {
+            View::Project(project)
+                if kept(task.id) || self.ancestors(task.id).into_iter().any(kept) =>
+            {
+                project
+            }
+            _ => task.project_id,
         }
     }
 

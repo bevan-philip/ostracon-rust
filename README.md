@@ -13,6 +13,8 @@ SQLite file on the machine: no accounts, no cloud.
 The app uses [GPUI](https://gpui.rs) through gpui-kit; the CLI and MCP server share its core and its database.
 
 - **Inbox** plus your own colour-coded **projects**
+- **Today**: everything due today from every project, under the overdue tasks; tasks added there are due
+  today, and tasks dropped on it in the sidebar are rescheduled for today
 - **Quick add**: `#Project` anywhere (multi-word names work, with autocomplete), Todoist-style dates
   (`tomorrow 5pm`, `next fri`, `in 3 days`, `jan 27`, `27/1`, `end of month`) and `!reminders`
   (`!30min`, `!tomorrow 9am`). Each becomes an inline block once you type the space after it; backspace
@@ -134,7 +136,8 @@ claude mcp add ostracon -- /Applications/Ostracon.app/Contents/MacOS/ostracon-mc
 | | ⇧⌘C | Show or hide completed tasks |
 | | ⌘O | Open the selected task's overview |
 | | ⌘, | Settings |
-| Task list | ↑ ↓ or J K, ⇧↑ ⇧↓ | Move or extend the selection |
+| Task list | G then T | Today |
+| | ↑ ↓ or J K, ⇧↑ ⇧↓ | Move or extend the selection |
 | | ← → | Collapse or expand (← on a leaf goes to its parent) |
 | | Space or ⌘Return | Complete or reopen |
 | | Return or ⌘E | Edit in place |

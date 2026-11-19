@@ -39,6 +39,8 @@ pub struct ComposerView {
     /// Chosen with the chips; text in the name overrides the project and date.
     project: ProjectId,
     due: Option<Due>,
+    /// The due date it opened with, which it goes back to for the next task.
+    seed_due: Option<Due>,
     reminders: Vec<Reminder>,
     /// What the name says, refreshed as it changes.
     parsed: QuickAddResult,
@@ -110,6 +112,7 @@ impl ComposerView {
             projects,
             project: seed.project,
             due: seed.due,
+            seed_due: seed.due,
             reminders: seed.reminders,
             parsed: QuickAddResult {
                 name: String::new(),
@@ -171,12 +174,13 @@ impl ComposerView {
         self.reparse(cx);
     }
 
-    /// After adding: ready for the next task in the same project, with nothing else carried over.
+    /// After adding: ready for the next task in the same project, due as the first was to begin with, with
+    /// nothing else carried over.
     pub fn reset_for_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.name.update(cx, |name, cx| name.clear(cx));
         self.description
             .update(cx, |d, cx| d.set_value("", window, cx));
-        self.due = None;
+        self.due = self.seed_due;
         self.reminders.clear();
         self.picker = Picker::Closed;
         self.baseline = self.current(cx);
