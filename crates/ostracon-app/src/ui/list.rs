@@ -30,24 +30,38 @@ impl Workspace {
         let items = self.state.list_items();
         let show_completed = self.state.show_completed;
         let empty = self.state.rows().is_empty() && !self.state.composer.is_in_list();
-        let row_count = self.state.rows().len();
+        let completed_start = self.state.completed_start();
         let drop = self.drop_target(cx);
 
+        // Open tasks, with "Add task" after them, then completed ones, as in Todoist.
         let mut rows: Vec<AnyElement> = Vec::new();
-        // Each task's index in the outline, which the composer may stand in for.
+        let mut completed_rows: Vec<AnyElement> = Vec::new();
+        // Each task's index in the rows, which the composer may stand in for.
         let mut index = 0;
         for item in items {
             match item {
                 ListItem::Task(row) => {
-                    rows.push(self.render_row(&row, index, drop, &now, &palette, cx));
+                    let element = self.render_row(&row, index, drop, &now, &palette, cx);
+                    if index < completed_start {
+                        rows.push(element);
+                    } else {
+                        completed_rows.push(element);
+                    }
                     index += 1;
                 }
                 ListItem::Composer { mode, depth } => {
                     if matches!(mode, Composer::Editing { .. }) {
                         index += 1;
                     }
+                    // It belongs with the row it stands in for, or follows.
+                    let completed = index > completed_start;
                     if let Some(composer) = &self.composer {
-                        rows.push(
+                        let target = if completed {
+                            &mut completed_rows
+                        } else {
+                            &mut rows
+                        };
+                        target.push(
                             div()
                                 .pl(px(GUTTER + depth as f32 * INDENT - 4.))
                                 .py_2()
@@ -72,7 +86,7 @@ impl Workspace {
                     .id("add-task")
                     .on_drag_move(cx.listener(
                         move |this, event: &DragMoveEvent<DraggedTasks>, _, cx| {
-                            this.hover_gap(event, row_count, cx)
+                            this.hover_gap(event, completed_start, cx)
                         },
                     ))
                     .flex()
@@ -94,6 +108,7 @@ impl Workspace {
                     .into_any_element(),
             );
         }
+        rows.append(&mut completed_rows);
 
         div()
             .flex()
@@ -489,8 +504,11 @@ impl Workspace {
                 d.child(drop_line(palette, target.depth))
             })
             // The drop target receives this value, not the preview view, so it must carry the ids.
-            .on_drag(drag, |drag: &DraggedTasks, _, _, cx| {
-                cx.new(|_| drag.clone())
+            // Completed tasks aren't part of the outline, so they can't be dragged into it.
+            .when(!completed, |d| {
+                d.on_drag(drag, |drag: &DraggedTasks, _, _, cx| {
+                    cx.new(|_| drag.clone())
+                })
             })
             .on_mouse_down(
                 MouseButton::Left,
