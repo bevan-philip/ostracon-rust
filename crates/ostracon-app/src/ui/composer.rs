@@ -3,7 +3,7 @@
 
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{Disableable as _, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -12,6 +12,7 @@ use jiff::ZonedDateTime;
 use ostracon_core::quickadd::{BlockValue, Draft, QuickAddResult};
 use ostracon_core::{Due, Project, ProjectId, Reminder};
 
+use super::overlays::DESCRIPTION_MAX_ROWS;
 use super::pickers::{DatePicker, PickerEvent, ReminderEditor};
 use super::quick_add::{QuickAddEvent, QuickAddInput};
 use super::theme;
@@ -34,7 +35,7 @@ enum Picker {
 pub struct ComposerView {
     pub mode: Mode,
     name: Entity<QuickAddInput>,
-    description: Entity<InputState>,
+    description: Entity<TextareaState>,
     projects: Vec<Project>,
     /// Chosen with the chips; text in the name overrides the project and date.
     project: ProjectId,
@@ -89,7 +90,10 @@ impl ComposerView {
         };
         let name = cx.new(|cx| QuickAddInput::new(seed.draft, projects.clone(), placeholder, cx));
         let description = cx.new(|cx| {
-            InputState::new(window, cx)
+            // Enter saves, as from the name; Shift-Enter starts a new line.
+            TextareaState::new(window, cx)
+                .auto_grow(1, DESCRIPTION_MAX_ROWS)
+                .submit_on_enter(true)
                 .placeholder("Description")
                 .default_value(seed.description)
         });
@@ -100,7 +104,7 @@ impl ComposerView {
                 QuickAddEvent::Cancel => this.cancel(cx),
             }),
             cx.subscribe_in(&description, window, |_, _, event, _, cx| {
-                if let InputEvent::PressEnter { .. } = event {
+                if let InputEvent::PressEnter { shift: false, .. } = event {
                     cx.emit(ComposerEvent::Submit);
                 }
             }),
@@ -426,7 +430,7 @@ impl Render for ComposerView {
             })
             // No padding of its own, so the description starts where the name does.
             .child(
-                Input::new(&self.description)
+                Textarea::new(&self.description)
                     .appearance(false)
                     .small()
                     .px_0()
