@@ -6,6 +6,24 @@ use ostracon_core::ProjectColor;
 
 use crate::format::Urgency;
 
+/// The UI font, vendored in `assets/fonts` under the SIL Open Font License and built into the binary.
+pub const FONT_FAMILY: &str = "Inter";
+
+/// Registers the vendored Inter faces and makes Inter the theme's font, so gpui-component's own text (inputs,
+/// menus, tooltips) uses it as well as Ostracon's views.
+pub fn install_font(cx: &mut App) {
+    let faces: [&'static [u8]; 4] = [
+        include_bytes!("../../assets/fonts/Inter-Regular.ttf"),
+        include_bytes!("../../assets/fonts/Inter-Medium.ttf"),
+        include_bytes!("../../assets/fonts/Inter-SemiBold.ttf"),
+        include_bytes!("../../assets/fonts/Inter-Bold.ttf"),
+    ];
+    cx.text_system()
+        .add_fonts(faces.into_iter().map(Into::into).collect())
+        .expect("the vendored Inter fonts load");
+    gpui_kit::component::Theme::update(cx, |theme| theme.font_family = FONT_FAMILY.into());
+}
+
 /// Task names (and the composer, so text doesn't change size when editing).
 pub const TASK_TEXT: f32 = 15.;
 pub const META_TEXT: f32 = 12.5;

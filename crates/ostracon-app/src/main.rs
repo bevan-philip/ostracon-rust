@@ -30,6 +30,7 @@ fn main() {
         .run(move |cx| {
             gpui_kit::init(cx);
             gpui_kit::component::Theme::sync_system_appearance(None, cx);
+            ostracon_app::ui::theme::install_font(cx);
             cx.set_app_identity(BUNDLE_ID, "Ostracon");
             actions::bind_keys(cx);
             cx.on_action(|_: &Quit, cx| cx.quit());

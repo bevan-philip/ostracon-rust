@@ -966,7 +966,7 @@ impl Render for Workspace {
             .size_full()
             .bg(palette.page)
             .text_color(palette.text)
-            .font_family(".SystemUIFont");
+            .font_family(theme::FONT_FAMILY);
         let root = self.with_actions(root, cx);
         let sidebar = self.render_sidebar(cx);
         let list = div()
