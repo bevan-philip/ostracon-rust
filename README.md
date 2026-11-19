@@ -68,6 +68,10 @@ The app, CLI and MCP server use the database at the same time. The app picks up 
 second and reschedules reminders. Every change is one transaction, and concurrent writers wait for each other
 rather than fail.
 
+### Appearance
+
+**Settings (⌘,)** chooses light or dark, or **System** (the default) to follow the system as it changes.
+
 ### Backups
 
 In **Settings (⌘,)**, choose a folder, for example one in OneDrive. Ostracon copies your tasks there when they

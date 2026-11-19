@@ -7,8 +7,10 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
+use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
 use ostracon_core::quickadd::Draft;
+use ostracon_core::settings::Appearance;
 use ostracon_core::{ProjectColor, TaskId};
 
 use super::actions::*;
@@ -184,9 +186,36 @@ impl Workspace {
             this.state.back_up_if_changed(false);
             async {}
         }));
+        // Follows the system when the appearance setting says to.
+        workspace
+            ._subscriptions
+            .push(cx.observe_window_appearance(window, |this, window, cx| {
+                this.apply_appearance(window, cx);
+            }));
+        workspace.apply_appearance(window, cx);
         window.focus(&workspace.list_focus, cx);
         workspace.sync(window, cx);
         workspace
+    }
+
+    fn apply_appearance(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let mode = match self.state.appearance {
+            Appearance::System => window.appearance().into(),
+            Appearance::Light => ThemeMode::Light,
+            Appearance::Dark => ThemeMode::Dark,
+        };
+        Theme::change(mode, Some(window), cx);
+    }
+
+    pub fn set_appearance(
+        &mut self,
+        appearance: Appearance,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.set_appearance(appearance);
+        self.apply_appearance(window, cx);
+        self.sync(window, cx);
     }
 
     fn tick(&mut self, window: &mut Window, cx: &mut Context<Self>) {

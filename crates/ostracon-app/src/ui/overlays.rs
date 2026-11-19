@@ -1,15 +1,16 @@
 //! Everything drawn above the list: the task overview, dialogs, settings and the toast.
 
 use gpui_kit::assets::IconName as Lucide;
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::{Button, ButtonGroup, ButtonVariants as _};
 use gpui_kit::component::input::{Input, Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::text::TextView;
-use gpui_kit::component::{Disableable as _, Icon, Sizable as _, Size};
+use gpui_kit::component::{Disableable as _, Icon, Selectable as _, Sizable as _, Size};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use jiff::ZonedDateTime;
 use ostracon_core::backup::Backup;
+use ostracon_core::settings::Appearance;
 use ostracon_core::{ProjectColor, TaskId};
 
 use super::actions::{Confirm, Escape, NewSubtask};
@@ -1082,6 +1083,37 @@ impl Workspace {
                             })),
                     ),
             )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .text_size(px(14.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("Appearance"),
+                    )
+                    .child(
+                        ButtonGroup::new("appearance").small().outline().children(
+                            [
+                                (Appearance::System, "System"),
+                                (Appearance::Light, "Light"),
+                                (Appearance::Dark, "Dark"),
+                            ]
+                            .into_iter()
+                            .map(|(appearance, label)| {
+                                Button::new(label)
+                                    .label(label)
+                                    .selected(self.state.appearance == appearance)
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.set_appearance(appearance, window, cx)
+                                    }))
+                            }),
+                        ),
+                    ),
+            )
+            .child(div().h(px(1.)).bg(palette.hairline).my_1())
             .child(
                 div()
                     .text_size(px(14.))

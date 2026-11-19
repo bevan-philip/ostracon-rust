@@ -4,6 +4,7 @@ use ostracon_app::state::{
     AppState, Composer, Dialog, DropTarget, ListItem, ProjectDraft, Selection, Undo,
 };
 use ostracon_core::quickadd::Draft;
+use ostracon_core::settings::Appearance;
 use ostracon_core::{Due, NewTask, ProjectColor, ProjectId, Repository, TaskId};
 
 fn now() -> ZonedDateTime {
@@ -736,6 +737,27 @@ fn backups_and_restore() {
         now,
     );
     assert_eq!(reopened.backup.folder.as_ref().unwrap().path, backups);
+}
+
+#[test]
+fn appearance_is_remembered() {
+    let dir = tempfile::tempdir().unwrap();
+    let settings = dir.path().join("settings.json");
+    let mut saved = AppState::with_clock(
+        Repository::in_memory().unwrap(),
+        Some(settings.clone()),
+        now,
+    );
+    assert_eq!(saved.appearance, Appearance::System);
+    saved.set_appearance(Appearance::Dark);
+    assert_eq!(saved.appearance, Appearance::Dark);
+    let reopened = AppState::with_clock(Repository::in_memory().unwrap(), Some(settings), now);
+    assert_eq!(reopened.appearance, Appearance::Dark);
+
+    // Without a settings file it lasts for the session.
+    let mut state = state();
+    state.set_appearance(Appearance::Light);
+    assert_eq!(state.appearance, Appearance::Light);
 }
 
 #[test]

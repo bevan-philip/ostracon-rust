@@ -9,6 +9,17 @@ use serde::{Deserialize, Serialize};
 pub struct Settings {
     /// Where backups go, or `None` when they're off.
     pub backup_folder: Option<PathBuf>,
+    pub appearance: Appearance,
+}
+
+/// Light or dark, or whichever the system uses.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Appearance {
+    #[default]
+    System,
+    Light,
+    Dark,
 }
 
 impl Settings {

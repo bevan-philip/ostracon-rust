@@ -17,7 +17,7 @@ use ostracon_core::dates::DateParser;
 use ostracon_core::quickadd::{BlockValue, Draft, QuickAddResult};
 use ostracon_core::repo::{self, NewTask, Snapshot};
 use ostracon_core::schedule::{self, NOTIFICATION_LIMIT};
-use ostracon_core::settings::Settings;
+use ostracon_core::settings::{Appearance, Settings};
 use ostracon_core::tree::{self, TaskRow};
 use ostracon_core::{Due, Project, ProjectColor, ProjectId, Reminder, Repository, Task, TaskId};
 
@@ -227,11 +227,13 @@ pub struct AppState {
     /// The last thing that went wrong, for the error banner.
     pub error: Option<String>,
     pub backup: BackupState,
+    pub appearance: Appearance,
     next_toast: u64,
 }
 
 impl AppState {
-    /// State over `repo`. Backups are configurable only with a `settings_path` to remember the folder in.
+    /// State over `repo`. Backups are configurable only with a `settings_path` to remember the folder in, and
+    /// without one the appearance lasts only for the session.
     pub fn new(repo: Repository, settings_path: Option<PathBuf>) -> Self {
         AppState::with_clock(repo, settings_path, ZonedDateTime::now)
     }
@@ -241,13 +243,15 @@ impl AppState {
         settings_path: Option<PathBuf>,
         clock: impl Fn() -> ZonedDateTime + 'static,
     ) -> Self {
+        let settings = settings_path
+            .as_deref()
+            .map(Settings::load)
+            .unwrap_or_default();
         let mut backup = BackupState {
             settings_path,
             ..Default::default()
         };
-        if let Some(path) = &backup.settings_path
-            && let Some(folder) = Settings::load(path).backup_folder
-        {
+        if let Some(folder) = settings.backup_folder {
             let folder = BackupFolder::new(folder);
             backup.policy.last_backup =
                 folder.backups().first().and_then(|b| timestamp(b.modified));
@@ -269,6 +273,7 @@ impl AppState {
             toast: None,
             error: None,
             backup,
+            appearance: settings.appearance,
             next_toast: 0,
         };
         state.reload();
@@ -1231,6 +1236,28 @@ impl AppState {
         }
     }
 
+    // Settings
+
+    /// Writes `change` to the settings file, if there is one; false, with the error shown, if that fails.
+    fn save_settings(&mut self, change: impl FnOnce(&mut Settings)) -> bool {
+        let Some(path) = &self.backup.settings_path else {
+            return true;
+        };
+        let mut settings = Settings::load(path);
+        change(&mut settings);
+        if let Err(e) = settings.save(path) {
+            self.error = Some(format!("Couldn't save settings: {e}"));
+            return false;
+        }
+        true
+    }
+
+    pub fn set_appearance(&mut self, appearance: Appearance) {
+        if self.save_settings(|s| s.appearance = appearance) {
+            self.appearance = appearance;
+        }
+    }
+
     // Backups
 
     pub fn database_path(&self) -> Option<&Path> {
@@ -1239,13 +1266,7 @@ impl AppState {
 
     /// Starts backing up to `folder`, with a backup straight away, or stops when it is `None`.
     pub fn set_backup_folder(&mut self, folder: Option<PathBuf>) {
-        let Some(settings_path) = self.backup.settings_path.clone() else {
-            return;
-        };
-        let mut settings = Settings::load(&settings_path);
-        settings.backup_folder = folder.clone();
-        if let Err(e) = settings.save(&settings_path) {
-            self.error = Some(format!("Couldn't save settings: {e}"));
+        if !self.backup.available() || !self.save_settings(|s| s.backup_folder = folder.clone()) {
             return;
         }
         self.backup.folder = folder.map(BackupFolder::new);
