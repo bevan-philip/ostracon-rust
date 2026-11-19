@@ -17,7 +17,7 @@ use ostracon_core::dates::DateParser;
 use ostracon_core::quickadd::{BlockValue, Draft, QuickAddResult};
 use ostracon_core::repo::{self, NewTask, Snapshot};
 use ostracon_core::schedule::{self, NOTIFICATION_LIMIT};
-use ostracon_core::settings::{Appearance, Settings};
+use ostracon_core::settings::{Appearance, Scheme, Settings};
 use ostracon_core::tree::{self, TaskRow};
 use ostracon_core::{Due, Project, ProjectColor, ProjectId, Reminder, Repository, Task, TaskId};
 
@@ -228,12 +228,13 @@ pub struct AppState {
     pub error: Option<String>,
     pub backup: BackupState,
     pub appearance: Appearance,
+    pub scheme: Scheme,
     next_toast: u64,
 }
 
 impl AppState {
     /// State over `repo`. Backups are configurable only with a `settings_path` to remember the folder in, and
-    /// without one the appearance lasts only for the session.
+    /// without one the appearance and scheme last only for the session.
     pub fn new(repo: Repository, settings_path: Option<PathBuf>) -> Self {
         AppState::with_clock(repo, settings_path, ZonedDateTime::now)
     }
@@ -274,6 +275,7 @@ impl AppState {
             error: None,
             backup,
             appearance: settings.appearance,
+            scheme: settings.scheme,
             next_toast: 0,
         };
         state.reload();
@@ -1255,6 +1257,12 @@ impl AppState {
     pub fn set_appearance(&mut self, appearance: Appearance) {
         if self.save_settings(|s| s.appearance = appearance) {
             self.appearance = appearance;
+        }
+    }
+
+    pub fn set_scheme(&mut self, scheme: Scheme) {
+        if self.save_settings(|s| s.scheme = scheme) {
+            self.scheme = scheme;
         }
     }
 

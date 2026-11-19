@@ -7,10 +7,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::component::input::{InputEvent, InputState, TextareaState};
-use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
 use ostracon_core::quickadd::Draft;
-use ostracon_core::settings::Appearance;
+use ostracon_core::settings::{Appearance, Scheme};
 use ostracon_core::{ProjectColor, TaskId};
 
 use super::actions::*;
@@ -199,12 +198,12 @@ impl Workspace {
     }
 
     fn apply_appearance(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let mode = match self.state.appearance {
-            Appearance::System => window.appearance().into(),
-            Appearance::Light => ThemeMode::Light,
-            Appearance::Dark => ThemeMode::Dark,
-        };
-        Theme::change(mode, Some(window), cx);
+        super::theme::Look::new(
+            self.state.scheme,
+            self.state.appearance,
+            window.appearance(),
+        )
+        .apply(cx);
     }
 
     pub fn set_appearance(
@@ -214,6 +213,12 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.state.set_appearance(appearance);
+        self.apply_appearance(window, cx);
+        self.sync(window, cx);
+    }
+
+    pub fn set_scheme(&mut self, scheme: Scheme, window: &mut Window, cx: &mut Context<Self>) {
+        self.state.set_scheme(scheme);
         self.apply_appearance(window, cx);
         self.sync(window, cx);
     }

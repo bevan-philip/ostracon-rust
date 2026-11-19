@@ -10,7 +10,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use jiff::ZonedDateTime;
 use ostracon_core::backup::Backup;
-use ostracon_core::settings::Appearance;
+use ostracon_core::settings::{Appearance, Scheme};
 use ostracon_core::{ProjectColor, TaskId};
 
 use super::actions::{Confirm, Escape, NewSubtask};
@@ -1113,6 +1113,32 @@ impl Workspace {
                         ),
                     ),
             )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .text_size(px(14.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("Colours"),
+                    )
+                    .child(
+                        ButtonGroup::new("scheme").small().outline().children(
+                            [(Scheme::Classic, "Classic"), (Scheme::Flexoki, "Flexoki")]
+                                .into_iter()
+                                .map(|(scheme, label)| {
+                                    Button::new(label)
+                                        .label(label)
+                                        .selected(self.state.scheme == scheme)
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.set_scheme(scheme, window, cx)
+                                        }))
+                                }),
+                        ),
+                    ),
+            )
             .child(div().h(px(1.)).bg(palette.hairline).my_1())
             .child(
                 div()
@@ -1147,12 +1173,8 @@ impl Workspace {
                 .pr_2()
                 .py_2()
                 .rounded_lg()
-                .bg(if palette.dark {
-                    rgb(0x3a3a3a).into()
-                } else {
-                    Hsla::from(rgb(0x202020))
-                })
-                .text_color(gpui_kit::white())
+                .bg(palette.toast)
+                .text_color(palette.toast_text)
                 .text_size(px(13.5))
                 .shadow_lg()
                 .child(toast.message.clone())
@@ -1164,7 +1186,7 @@ impl Workspace {
                             .py_1()
                             .rounded_md()
                             .cursor_pointer()
-                            .text_color(rgb(0xff8a7f))
+                            .text_color(palette.toast_action)
                             .font_weight(FontWeight::SEMIBOLD)
                             .hover(|d| d.bg(rgba(0xffffff1a)))
                             .child("Undo")

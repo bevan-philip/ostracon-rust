@@ -4,7 +4,7 @@ use ostracon_app::state::{
     AppState, Composer, Dialog, DropTarget, ListItem, ProjectDraft, Selection, Undo,
 };
 use ostracon_core::quickadd::Draft;
-use ostracon_core::settings::Appearance;
+use ostracon_core::settings::{Appearance, Scheme};
 use ostracon_core::{Due, NewTask, ProjectColor, ProjectId, Repository, TaskId};
 
 fn now() -> ZonedDateTime {
@@ -740,7 +740,7 @@ fn backups_and_restore() {
 }
 
 #[test]
-fn appearance_is_remembered() {
+fn appearance_and_scheme_are_remembered() {
     let dir = tempfile::tempdir().unwrap();
     let settings = dir.path().join("settings.json");
     let mut saved = AppState::with_clock(
@@ -749,15 +749,21 @@ fn appearance_is_remembered() {
         now,
     );
     assert_eq!(saved.appearance, Appearance::System);
+    assert_eq!(saved.scheme, Scheme::Classic);
     saved.set_appearance(Appearance::Dark);
+    saved.set_scheme(Scheme::Flexoki);
     assert_eq!(saved.appearance, Appearance::Dark);
+    assert_eq!(saved.scheme, Scheme::Flexoki);
     let reopened = AppState::with_clock(Repository::in_memory().unwrap(), Some(settings), now);
     assert_eq!(reopened.appearance, Appearance::Dark);
+    assert_eq!(reopened.scheme, Scheme::Flexoki);
 
-    // Without a settings file it lasts for the session.
+    // Without a settings file they last for the session.
     let mut state = state();
     state.set_appearance(Appearance::Light);
+    state.set_scheme(Scheme::Flexoki);
     assert_eq!(state.appearance, Appearance::Light);
+    assert_eq!(state.scheme, Scheme::Flexoki);
 }
 
 #[test]

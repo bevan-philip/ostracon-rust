@@ -17,6 +17,7 @@ path = "src/main.rs"
 [dependencies]
 ostracon-core.workspace = true
 jiff.workspace = true
+serde_json.workspace = true
 # gpui and gpui-component come only through the kit, exact-pinned.
 gpui-kit = "=0.9.0"
 # Only to talk to gpui-kit's calendar, which works in chrono dates; Ostracon itself uses jiff.

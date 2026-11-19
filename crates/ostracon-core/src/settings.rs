@@ -10,6 +10,7 @@ pub struct Settings {
     /// Where backups go, or `None` when they're off.
     pub backup_folder: Option<PathBuf>,
     pub appearance: Appearance,
+    pub scheme: Scheme,
 }
 
 /// Light or dark, or whichever the system uses.
@@ -20,6 +21,17 @@ pub enum Appearance {
     System,
     Light,
     Dark,
+}
+
+/// The colours the app is drawn in. Each has a light and a dark variant, chosen by [`Appearance`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Scheme {
+    /// Todoist's colours.
+    #[default]
+    Classic,
+    /// Steph Ango's Flexoki, <https://stephango.com/flexoki>.
+    Flexoki,
 }
 
 impl Settings {

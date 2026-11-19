@@ -72,6 +72,9 @@ rather than fail.
 
 **Settings (⌘,)** chooses light or dark, or **System** (the default) to follow the system as it changes.
 
+**Colours** switches between **Classic**, Todoist's colours, and [Flexoki](https://stephango.com/flexoki). Each has
+a light and a dark variant.
+
 ### Backups
 
 In **Settings (⌘,)**, choose a folder, for example one in OneDrive. Ostracon copies your tasks there when they

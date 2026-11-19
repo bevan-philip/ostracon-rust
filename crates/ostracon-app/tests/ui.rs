@@ -3,10 +3,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gpui_kit::component::Root;
-use gpui_kit::{AppContext as _, Entity, TestAppContext, VisualTestContext};
+use gpui_kit::component::{Root, Theme};
+use gpui_kit::{AppContext as _, Entity, Hsla, TestAppContext, VisualTestContext, rgb};
 use ostracon_app::state::{AppState, Composer, Dialog};
-use ostracon_app::ui::{actions, workspace::Workspace};
+use ostracon_app::ui::{actions, theme, workspace::Workspace};
+use ostracon_core::settings::{Appearance, Scheme};
 use ostracon_core::{Due, NewTask, ProjectColor, Repository};
 
 fn open(
@@ -825,4 +826,32 @@ fn the_overview_description_keeps_its_size_when_editing_starts(cx: &mut TestAppC
         "it wraps: {shown:?}"
     );
     assert_eq!(editing.size, shown.size);
+}
+
+#[gpui_kit::test]
+fn schemes_recolour_the_app_and_its_components(cx: &mut TestAppContext) {
+    let (workspace, cx) = open(cx, |_| {});
+    let flexoki_paper = Hsla::from(rgb(0xfffcf0));
+    let flexoki_black = Hsla::from(rgb(0x100f0f));
+    let colours = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| (theme::palette(cx).page, Theme::global(cx).background))
+    };
+
+    workspace.update_in(cx, |w, window, cx| {
+        w.set_appearance(Appearance::Light, window, cx);
+        w.set_scheme(Scheme::Flexoki, window, cx);
+    });
+    assert_eq!(colours(cx), (flexoki_paper, flexoki_paper));
+
+    workspace.update_in(cx, |w, window, cx| {
+        w.set_appearance(Appearance::Dark, window, cx)
+    });
+    assert_eq!(colours(cx), (flexoki_black, flexoki_black));
+
+    workspace.update_in(cx, |w, window, cx| {
+        w.set_scheme(Scheme::Classic, window, cx)
+    });
+    let (page, background) = colours(cx);
+    assert_ne!(page, flexoki_black);
+    assert_ne!(background, flexoki_black);
 }
