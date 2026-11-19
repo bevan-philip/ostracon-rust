@@ -81,6 +81,22 @@ pub fn rows(tasks: &[Task], project: ProjectId, show_completed: bool) -> Vec<Tas
     rows
 }
 
+/// Each of `rows` with whether it goes when the ones that `remove` picks go, taking their subtasks with them.
+pub fn removing<'a>(
+    rows: &'a [TaskRow],
+    mut remove: impl FnMut(&TaskRow) -> bool + 'a,
+) -> impl Iterator<Item = (&'a TaskRow, bool)> + 'a {
+    let mut removing_below: Option<usize> = None;
+    rows.iter().map(move |row| {
+        if removing_below.is_some_and(|depth| row.depth > depth) {
+            return (row, true);
+        }
+        let removed = remove(row);
+        removing_below = removed.then_some(row.depth);
+        (row, removed)
+    })
+}
+
 /// Open tasks in a project, subtasks included.
 pub fn open_count(tasks: &[Task], project: ProjectId) -> usize {
     tasks
@@ -153,5 +169,21 @@ mod tests {
         ];
         assert_eq!(shown(&tasks, false), ["1", " 3"]);
         assert_eq!(shown(&tasks, true), ["1", " 3", " 2", "4", " 5", "6"]);
+    }
+
+    #[test]
+    fn removing_takes_subtasks_along() {
+        let tasks = [
+            task(1, None, None),
+            task(2, Some(1), None),
+            task(3, Some(2), None),
+            task(4, Some(1), None),
+            task(5, None, None),
+        ];
+        let rows = rows(&tasks, ProjectId(1), false);
+        let removed: Vec<bool> = removing(&rows, |r| r.id() == TaskId(2))
+            .map(|(_, removed)| removed)
+            .collect();
+        assert_eq!(removed, [false, true, true, false, false]);
     }
 }

@@ -973,14 +973,11 @@ impl AppState {
         let dragged = self.topmost(dragged);
         let mut rows: Vec<&TaskRow> = Vec::new();
         let mut split = 0;
-        let mut skipping_below: Option<usize> = None;
-        for (index, row) in self.rows.iter().enumerate() {
-            if skipping_below.is_some_and(|depth| row.depth > depth) {
-                continue;
-            }
-            skipping_below = None;
-            if dragged.contains(&row.id()) || row.task.is_completed() {
-                skipping_below = Some(row.depth);
+        let remaining = tree::removing(&self.rows, |row| {
+            dragged.contains(&row.id()) || row.task.is_completed()
+        });
+        for (index, (row, removed)) in remaining.enumerate() {
+            if removed {
                 continue;
             }
             rows.push(row);
@@ -1512,19 +1509,10 @@ impl AppState {
     /// selection should go — the first row left after the anchor, or the last before it. `None` when the
     /// selection isn't affected.
     fn selection_after_removing(&self, ids: &[TaskId]) -> Option<Option<TaskId>> {
-        let mut removed = BTreeSet::new();
-        let mut removing_below: Option<usize> = None;
-        for row in &self.rows {
-            if removing_below.is_some_and(|depth| row.depth > depth) {
-                removed.insert(row.id());
-                continue;
-            }
-            removing_below = None;
-            if ids.contains(&row.id()) {
-                removed.insert(row.id());
-                removing_below = Some(row.depth);
-            }
-        }
+        let removed: BTreeSet<TaskId> = tree::removing(&self.rows, |row| ids.contains(&row.id()))
+            .filter(|&(_, removed)| removed)
+            .map(|(row, _)| row.id())
+            .collect();
         if !self.selection.ids().iter().any(|id| removed.contains(id)) {
             return None;
         }
