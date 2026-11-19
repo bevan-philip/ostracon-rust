@@ -291,9 +291,17 @@ impl AppState {
         tree::open_count(&self.snapshot.tasks, project)
     }
 
-    /// The current project's outline.
+    /// The current project's outline, then its completed tasks if they're being shown.
     pub fn rows(&self) -> &[TaskRow] {
         &self.rows
+    }
+
+    /// Where the completed tasks start in [`Self::rows`]: its length when there are none.
+    pub fn completed_start(&self) -> usize {
+        self.rows
+            .iter()
+            .position(|r| r.task.is_completed())
+            .unwrap_or(self.rows.len())
     }
 
     fn row_index(&self, id: TaskId) -> Option<usize> {
@@ -309,10 +317,13 @@ impl AppState {
         let mut items: Vec<ListItem> = self.rows.iter().cloned().map(ListItem::Task).collect();
         match self.composer {
             Composer::Closed | Composer::AddingInOverview { .. } => {}
-            Composer::Adding { parent: None } => items.push(ListItem::Composer {
-                mode: self.composer,
-                depth: 0,
-            }),
+            Composer::Adding { parent: None } => items.insert(
+                self.completed_start(),
+                ListItem::Composer {
+                    mode: self.composer,
+                    depth: 0,
+                },
+            ),
             Composer::Adding {
                 parent: Some(parent),
             } => {
@@ -952,16 +963,16 @@ impl AppState {
         true
     }
 
-    /// Where `dragged` would land if dropped in the gap before row `gap` (after the last row when it is
-    /// `rows().len()`), as near `depth` levels in as the outline allows: no deeper than a subtask of the row
-    /// above, and no shallower than the row below. The dragged tasks' own rows don't count, so any gap among
-    /// them is the gap where they already are.
+    /// Where `dragged` would land if dropped in the gap before row `gap` (after the outline's last row when
+    /// it is `completed_start()` or more), as near `depth` levels in as the outline allows: no deeper than a
+    /// subtask of the row above, and no shallower than the row below. The dragged tasks' own rows don't count,
+    /// so any gap among them is the gap where they already are. Completed tasks aren't part of the outline.
     pub fn drop_target(&self, dragged: &[TaskId], gap: usize, depth: isize) -> DropTarget {
         let dragged = self.topmost(dragged);
         let mut rows: Vec<&TaskRow> = Vec::new();
         let mut split = 0;
         let mut skipping_below: Option<usize> = None;
-        for (index, row) in self.rows.iter().enumerate() {
+        for (index, row) in self.rows[..self.completed_start()].iter().enumerate() {
             if skipping_below.is_some_and(|depth| row.depth > depth) {
                 continue;
             }

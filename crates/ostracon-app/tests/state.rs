@@ -291,6 +291,29 @@ fn parents_show_hidden_completed_subtasks() {
 }
 
 #[test]
+fn completed_tasks_stay_out_of_the_outline() {
+    let mut state = state();
+    let ids = add_outline(&mut state, "A\nB");
+    state.toggle_completed(Some(ids[0]));
+    state.set_show_completed(true);
+    assert_eq!(shown(&state), ["B", "A"]);
+    assert_eq!(state.completed_start(), 1);
+
+    state.start_adding();
+    assert!(
+        matches!(state.list_items()[1], ListItem::Composer { .. }),
+        "a new task is added at the end of the outline, above the completed ones"
+    );
+
+    let target = state.drop_target(&[ids[1]], 2, 0);
+    assert_eq!(
+        (target.before, target.parent),
+        (None, None),
+        "nothing can be dropped among the completed tasks"
+    );
+}
+
+#[test]
 fn collapsing_hands_the_selection_to_the_parent() {
     let mut state = state();
     let ids = add_outline(&mut state, "A\n B\n  C");
