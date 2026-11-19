@@ -15,7 +15,7 @@ use super::actions::{Confirm, Escape, NewSubtask};
 use super::theme::{self, Palette, TASK_TEXT};
 use super::workspace::{OverviewPicker, Panel, Workspace};
 use crate::format;
-use crate::state::{Composer, Dialog, Undo};
+use crate::state::{AppState, Composer, Dialog, Undo};
 
 /// The backdrop's padding above a modal card.
 const MODAL_TOP: f32 = 72.;
@@ -87,11 +87,12 @@ impl Workspace {
                 .key_context(format!("Modal {context}").as_str())
                 .track_focus(&self.modal_focus)
                 .occlude()
-                // A click on the backdrop closes the top layer, as Esc does. It calls the handler rather than
-                // dispatching the action, which would need focus to be inside the modal.
+                // A click on the backdrop closes the top layer, as Esc does, except that closing the overview
+                // this way also clears the selection. It calls the handler rather than dispatching the action,
+                // which would need focus to be inside the modal.
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(|this, _, window, cx| this.escape(&Escape, window, cx)),
+                    cx.listener(|this, _, window, cx| this.click_off(window, cx)),
                 )
                 .child(content)
                 .into_any_element(),
@@ -563,7 +564,7 @@ impl Workspace {
                                         .tooltip("Close (Esc)")
                                         .on_click(cx.listener(move |this, _, window, cx| {
                                             this.save_overview(id, window, cx);
-                                            this.act(window, cx, |s| s.close_overview());
+                                            this.act(window, cx, AppState::dismiss_overview);
                                         })),
                                 ),
                         ),

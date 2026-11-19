@@ -717,6 +717,24 @@ impl Workspace {
         }
     }
 
+    /// A click on the modal backdrop: closes the top layer as Esc does, but closing the overview this way
+    /// leaves nothing selected.
+    pub fn click_off(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let overview_on_top = self
+            .overview
+            .as_ref()
+            .is_some_and(|o| matches!(o.picker, OverviewPicker::Closed))
+            && self.panel == Panel::None
+            && self.state.dialog == Dialog::None;
+        match self.state.overview {
+            Some(id) if overview_on_top => {
+                self.save_overview(id, window, cx);
+                self.act(window, cx, AppState::dismiss_overview);
+            }
+            _ => self.escape(&Escape, window, cx),
+        }
+    }
+
     /// Hooks every action up to the root element.
     pub fn with_actions(&self, root: Div, cx: &mut Context<Self>) -> Div {
         root.on_action(cx.listener(Self::quit))

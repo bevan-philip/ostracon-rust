@@ -673,6 +673,13 @@ impl AppState {
         self.reconcile();
     }
 
+    /// Closes the overview with the mouse, which leaves nothing selected, as clicking off a task does. Esc
+    /// keeps the selection so the keyboard can carry on from the task.
+    pub fn dismiss_overview(&mut self) {
+        self.close_overview();
+        self.clear_selection();
+    }
+
     /// The task `offset` rows from the open one, which the overview's arrows step to.
     pub fn overview_neighbour(&self, offset: isize) -> Option<TaskId> {
         let index = self.row_index(self.overview?)?;
