@@ -614,6 +614,29 @@ fn the_overview_edits_only_on_save(cx: &mut TestAppContext) {
         workspace.read_with(cx, |w, _| w.state.rows()[0].task.description.clone()),
         "Notes"
     );
+
+    // So does Cmd/Ctrl-Enter, from the description without adding a line, and from the name.
+    cx.update(|window, cx| window.click("overview-description", cx));
+    cx.run_until_parked();
+    cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+        "cmd-down"
+    } else {
+        "ctrl-end"
+    });
+    cx.simulate_input(" more");
+    cx.simulate_keystrokes("secondary-enter");
+    cx.run_until_parked();
+    assert!(!editing(&workspace, cx));
+    assert_eq!(
+        workspace.read_with(cx, |w, _| w.state.rows()[0].task.description.clone()),
+        "Notes more"
+    );
+    cx.simulate_keystrokes("enter end");
+    cx.simulate_input(" two");
+    cx.simulate_keystrokes("secondary-enter");
+    cx.run_until_parked();
+    assert!(!editing(&workspace, cx));
+    assert_eq!(name(&workspace, cx), "A two");
 }
 
 #[gpui_kit::test]

@@ -886,6 +886,7 @@ impl Workspace {
             .on_action(cx.listener(Self::move_down))
             .on_action(cx.listener(Self::delete))
             .on_action(cx.listener(Self::confirm))
+            .on_action(cx.listener(|this, _: &SaveOverview, w, cx| this.save_overview(w, cx)))
             .on_action(cx.listener(Self::escape))
     }
 }

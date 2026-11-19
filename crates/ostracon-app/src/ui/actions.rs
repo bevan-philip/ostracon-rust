@@ -37,6 +37,7 @@ gpui_kit::actions!(
         Delete,
         Escape,
         Confirm,
+        SaveOverview,
     ]
 );
 
@@ -93,6 +94,14 @@ pub fn bind_keys(cx: &mut App) {
         key("enter", Edit, Some("Overview && !Input"), cx),
         key("secondary-e", Edit, Some("Overview && !Input"), cx),
         key("enter", Confirm, Some("Dialog && !Input"), cx),
+        // Saves the overview's editor from its name or its description, where it would otherwise be a newline.
+        key("secondary-enter", SaveOverview, Some("Overview"), cx),
+        key(
+            "secondary-enter",
+            SaveOverview,
+            Some("Overview > Input"),
+            cx,
+        ),
     ];
     cx.bind_keys(bindings);
     crate::ui::quick_add::bind_keys(cx);
