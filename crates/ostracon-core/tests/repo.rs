@@ -254,7 +254,11 @@ fn collapsed_tasks_hide_subtasks_and_parents_count_completed_ones() {
         (2, 1, 1)
     );
     repo.set_collapsed(a, true).unwrap();
-    assert_eq!(names(&repo, true), ["A"]);
+    assert_eq!(
+        names(&repo, true),
+        ["A", "B"],
+        "completed tasks are listed below the outline, not under their parent"
+    );
 }
 
 #[test]
