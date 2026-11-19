@@ -111,7 +111,8 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Ostracon".into()),
-                    appears_transparent: true,
+                    // Elsewhere the app would have to draw its own title bar to be moved and resized.
+                    appears_transparent: cfg!(target_os = "macos"),
                     traffic_light_position: Some(point(px(14.), px(14.))),
                 }),
                 window_min_size: Some(size(px(720.), px(480.))),
