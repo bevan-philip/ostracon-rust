@@ -506,11 +506,13 @@ impl DateParser {
         if let Some(year) = year {
             return Date::new(year, month, day).ok();
         }
+        // 29 February can be up to eight years away, as from 2096 to 2104.
         let today = self.today();
-        match Date::new(today.year(), month, day) {
-            Ok(date) if date >= today => Some(date),
-            _ => Date::new(today.year() + 1, month, day).ok(),
-        }
+        (0..=8).find_map(|ahead| {
+            Date::new(today.year().checked_add(ahead)?, month, day)
+                .ok()
+                .filter(|date| *date >= today)
+        })
     }
 
     /// `2027-01-27`, or `27/1`, `27/1/27`, `27/01/2027` in the region's day–month order.
@@ -798,6 +800,15 @@ mod tests {
         assert_eq!(due("27th january 2027"), day(2027, 1, 27));
         assert_eq!(due("1st march"), day(2026, 3, 1));
         assert_eq!(due("2027-01-27"), day(2027, 1, 27));
+        assert_eq!(due("feb 30"), None);
+    }
+
+    #[test]
+    fn a_leap_day_without_a_year_is_the_next_one() {
+        // 2026 and 2027 have no 29 February.
+        assert_eq!(due("feb 29"), day(2028, 2, 29));
+        assert_eq!(due("29th february"), day(2028, 2, 29));
+        assert_eq!(due("29/2"), day(2028, 2, 29));
         assert_eq!(due("feb 30"), None);
     }
 
