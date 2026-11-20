@@ -505,6 +505,7 @@ impl AppState {
         self.selection = Selection::Empty;
         self.composer = Composer::Closed;
         self.overview = None;
+        self.overview_editing = false;
         self.refresh_rows();
     }
 
