@@ -5198,6 +5198,7 @@ version = "0.1.0"
 dependencies = [
  "dirs 6.0.0",
  "jiff",
+ "proptest",
  "regex",
  "rusqlite",
  "serde",

@@ -19,6 +19,7 @@ regex = "1"
 tempfile = "3"
 sys-locale = "0.3"
 dirs = "6"
+proptest = "1"
 
 # Third-party crates optimised in dev builds so the GPUI app is usable while developing.
 [profile.dev.package."*"]
