@@ -1006,3 +1006,54 @@ fn switching_lists_closes_the_overviews_editor() {
         "the editor closes with the overview it belongs to"
     );
 }
+
+#[test]
+fn completing_in_today_moves_the_selection_past_subtasks_that_go_too() {
+    let mut state = state();
+    let yesterday = Some(Due::day(date(2026, 1, 13)));
+    let parent = add_due(&mut state, "A", None, yesterday);
+    let subtask = state
+        .repository()
+        .add_task(NewTask {
+            name: "A1".into(),
+            parent_id: Some(parent),
+            due: yesterday,
+            ..Default::default()
+        })
+        .unwrap()
+        .id;
+    let next = add_due(&mut state, "B", None, Some(Due::day(date(2026, 1, 14))));
+    state.select_today();
+    assert_eq!(
+        shown(&state),
+        ["A", "A1", "B"],
+        "the subtask is listed flat"
+    );
+    state.select_only(parent);
+    state.toggle_completed(None);
+    assert!(state.task(subtask).unwrap().is_completed());
+    assert_eq!(state.selection, Selection::single(next));
+}
+
+#[test]
+fn deleting_in_today_moves_the_selection_past_subtasks_that_go_too() {
+    let mut state = state();
+    let yesterday = Some(Due::day(date(2026, 1, 13)));
+    let parent = add_due(&mut state, "A", None, yesterday);
+    state
+        .repository()
+        .add_task(NewTask {
+            name: "A1".into(),
+            parent_id: Some(parent),
+            due: yesterday,
+            ..Default::default()
+        })
+        .unwrap();
+    let next = add_due(&mut state, "B", None, Some(Due::day(date(2026, 1, 14))));
+    state.select_today();
+    state.select_only(parent);
+    state.request_delete(None);
+    state.confirm_dialog();
+    assert_eq!(shown(&state), ["B"]);
+    assert_eq!(state.selection, Selection::single(next));
+}

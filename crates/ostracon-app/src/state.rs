@@ -1728,8 +1728,11 @@ impl AppState {
     /// selection should go — the first row left after the anchor, or the last before it. `None` when the
     /// selection isn't affected.
     fn selection_after_removing(&self, ids: &[TaskId]) -> Option<Option<TaskId>> {
+        // Subtasks go with their parents even where they aren't nested beneath them, as in Today.
         let removed: BTreeSet<TaskId> = tree::removing(self.rows(), |row| ids.contains(&row.id()))
-            .filter(|&(_, removed)| removed)
+            .filter(|&(row, removed)| {
+                removed || self.ancestors(row.id()).iter().any(|a| ids.contains(a))
+            })
             .map(|(row, _)| row.id())
             .collect();
         if !self.selection.ids().iter().any(|id| removed.contains(id)) {
