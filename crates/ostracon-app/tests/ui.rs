@@ -829,6 +829,34 @@ fn a_row_ends_its_description_in_an_ellipsis_only_when_it_is_cut_short(cx: &mut 
 }
 
 #[gpui_kit::test]
+fn the_overview_shows_its_subtasks_descriptions(cx: &mut TestAppContext) {
+    let (workspace, cx) = open(cx, |repo| {
+        let a = repo
+            .add_task(NewTask {
+                name: "A".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        repo.add_task(NewTask {
+            name: "B".into(),
+            parent_id: Some(a.id),
+            description: "A description much too long for one row. ".repeat(20),
+            ..Default::default()
+        })
+        .unwrap();
+    });
+    let a = workspace.read_with(cx, |w, _| w.state.rows()[0].task.id);
+    workspace.update_in(cx, |w, window, cx| {
+        w.act(window, cx, |s| s.open_overview(a))
+    });
+    cx.run_until_parked();
+    // As in the list, it is cut to one row, which the view only knows once it has been drawn.
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("subtask-description-ellipsis-2").is_some());
+}
+
+#[gpui_kit::test]
 fn the_overview_editor_shows_the_description_icon_only_while_it_is_empty(cx: &mut TestAppContext) {
     use gpui_kit::test::TestWindowExt as _;
     let (_workspace, cx) = open(cx, |repo| {

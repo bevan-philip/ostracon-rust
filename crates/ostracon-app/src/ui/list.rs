@@ -36,8 +36,53 @@ pub struct DescriptionViews {
 }
 
 impl DescriptionViews {
-    fn start_frame(&mut self) {
+    pub fn start_frame(&mut self) {
         self.previous = mem::take(&mut self.current);
+    }
+
+    /// A row's description below its name: the first line, with an ellipsis when more lines follow, rendered as
+    /// Markdown and cut to one row, which ends in an ellipsis when it is too long for it. The view says whether
+    /// it cut the last frame short; the ellipsis is `{ellipsis}-{id}` to tests. It isn't selectable, so a click
+    /// or drag on it reaches the row; a link still opens.
+    pub fn preview(
+        &mut self,
+        id: TaskId,
+        description: &str,
+        ellipsis: &'static str,
+        palette: &Palette,
+        cx: &mut App,
+    ) -> Option<AnyElement> {
+        let mut lines = description.lines();
+        let first = lines.next().filter(|d| !d.is_empty())?;
+        let text = if lines.any(|l| !l.trim().is_empty()) {
+            format!("{first} …")
+        } else {
+            first.to_owned()
+        };
+        let view = self.view(id, &text, cx);
+        let clamped = view.read(cx).is_clamped();
+        Some(
+            div()
+                .flex()
+                .text_size(px(META_TEXT))
+                .text_color(palette.muted)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .child(TextView::new(&view).selectable(false).max_lines(1)),
+                )
+                .when(clamped, |d| {
+                    d.child(
+                        div()
+                            .flex_none()
+                            .debug_selector(move || format!("{ellipsis}-{}", id.0))
+                            .child("…"),
+                    )
+                })
+                .into_any_element(),
+        )
     }
 
     fn view(&mut self, id: TaskId, text: &str, cx: &mut App) -> Entity<TextViewState> {
@@ -558,16 +603,13 @@ impl Workspace {
             );
         }
 
-        // Its first line, with an ellipsis when more lines follow.
-        let mut lines = task.description.lines();
-        let description = lines.next().filter(|d| !d.is_empty()).map(|first| {
-            let text = if lines.any(|l| !l.trim().is_empty()) {
-                format!("{first} …")
-            } else {
-                first.to_owned()
-            };
-            self.descriptions.borrow_mut().view(id, &text, cx)
-        });
+        let description = self.descriptions.borrow_mut().preview(
+            id,
+            &task.description,
+            "task-description-ellipsis",
+            palette,
+            cx,
+        );
         let drag = {
             let ids = self.state.acting_on(Some(id));
             let label: SharedString = if ids.len() > 1 {
@@ -653,34 +695,7 @@ impl Workspace {
                                     .when(completed, |d| d.line_through())
                                     .child(task.name.clone()),
                             )
-                            .when_some(description, |d, view| {
-                                // Rendered as Markdown and cut to one row, which ends in an ellipsis when it is too
-                                // long for it. The view says whether it cut the last frame short. It isn't
-                                // selectable, so a click or drag on it reaches the row; a link still opens.
-                                let clamped = view.read(cx).is_clamped();
-                                d.child(
-                                    div()
-                                        .flex()
-                                        .text_size(px(META_TEXT))
-                                        .text_color(palette.muted)
-                                        .child(div().flex_1().min_w_0().overflow_hidden().child(
-                                            TextView::new(&view).selectable(false).max_lines(1),
-                                        ))
-                                        .when(clamped, |d| {
-                                            d.child(
-                                                div()
-                                                    .flex_none()
-                                                    .debug_selector(move || {
-                                                        format!(
-                                                            "task-description-ellipsis-{}",
-                                                            id.0
-                                                        )
-                                                    })
-                                                    .child("…"),
-                                            )
-                                        }),
-                                )
-                            })
+                            .children(description)
                             .when(!meta.is_empty(), |d| {
                                 d.child(
                                     div()

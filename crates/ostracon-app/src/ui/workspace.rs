@@ -124,6 +124,8 @@ pub struct Workspace {
     pub sidebar_scroll: ScrollHandle,
     /// The task rows' description views, which the list keeps from one frame to the next.
     pub descriptions: RefCell<DescriptionViews>,
+    /// The same for the overview's sub-task rows, which are narrower than their rows in the list.
+    pub subtask_descriptions: RefCell<DescriptionViews>,
     _tasks: Vec<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
@@ -155,6 +157,7 @@ impl Workspace {
             toast_timer: None,
             sidebar_scroll: ScrollHandle::new(),
             descriptions: RefCell::default(),
+            subtask_descriptions: RefCell::default(),
             _tasks: Vec::new(),
             _subscriptions: Vec::new(),
         };

@@ -160,6 +160,7 @@ impl Workspace {
             Some((pid, parent.name.clone(), parent.is_completed(), open))
         });
         let subtasks: Vec<_> = self.state.subtasks(task.id).into_iter().cloned().collect();
+        self.subtask_descriptions.get_mut().start_frame();
         let editor = overview
             .editor
             .as_ref()
@@ -407,10 +408,17 @@ impl Workspace {
             .children(subtasks.into_iter().map(|sub| {
                 let sid = sub.id;
                 let done = sub.is_completed();
+                let description = self.subtask_descriptions.borrow_mut().preview(
+                    sid,
+                    &sub.description,
+                    "subtask-description-ellipsis",
+                    palette,
+                    cx,
+                );
                 div()
                     .id(("subtask", sid.0 as usize))
                     .flex()
-                    .items_center()
+                    .items_start()
                     .gap_2p5()
                     .ml(text_inset)
                     .py_2()
@@ -421,6 +429,8 @@ impl Workspace {
                     .child(
                         div()
                             .id(("subtask-check", sid.0 as usize))
+                            // Level with the name's line.
+                            .mt(px(2.))
                             .size(px(16.))
                             .flex_none()
                             .rounded_full()
@@ -434,10 +444,20 @@ impl Workspace {
                     )
                     .child(
                         div()
-                            .text_size(px(TASK_TEXT - 1.))
-                            .text_color(if done { palette.faint } else { palette.text })
-                            .when(done, |d| d.line_through())
-                            .child(sub.name.clone()),
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_0p5()
+                            .child(
+                                div()
+                                    .text_size(px(TASK_TEXT - 1.))
+                                    .line_height(px(20.))
+                                    .text_color(if done { palette.faint } else { palette.text })
+                                    .when(done, |d| d.line_through())
+                                    .child(sub.name.clone()),
+                            )
+                            .children(description),
                     )
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.leave_overview(Some(sid), window, cx)
