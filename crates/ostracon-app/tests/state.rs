@@ -990,3 +990,19 @@ fn revealing_a_task_listed_in_today_stays_in_today() {
     assert_eq!(state.view, View::Today);
     assert_eq!(state.selection.anchor(), Some(id));
 }
+
+#[test]
+fn switching_lists_closes_the_overviews_editor() {
+    let mut state = state();
+    let id = add_due(&mut state, "A", None, None);
+    state.select_today();
+    state.open_overview(id);
+    state.start_editing_overview();
+    let inbox = state.home_project();
+    state.select_project(inbox);
+    assert_eq!(state.overview, None);
+    assert!(
+        !state.overview_editing,
+        "the editor closes with the overview it belongs to"
+    );
+}
